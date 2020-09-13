@@ -10,15 +10,15 @@ use ipfs_embed::{TREE, MAX_BLOCK_SIZE, Config, Store, WritableStore, NetworkConf
 fn main() -> Result<(), Box<dyn std::error::Error>>
 {
     env_logger::init();
-    
+
     let db = sled::open("db")?;
     let tree_name = TREE.to_string();
     let tree = db.open_tree(tree_name)?;
-    let mut network = NetworkConfig::new();
+    let mut network : NetworkConfig = Default::default();
 
-    network.boot_nodes.push((
-        "/ip4/99.149.215.66/tcp/4001".parse()?,
-        "QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5".parse()?));
+    network.allow_non_globals_in_dht = true;
+    network.listen_addresses = vec!["/ip4/0.0.0.0/tcp/0".parse()?];
+    network.boot_nodes.push(("/ip4/99.149.215.66/tcp/4001".parse()?, "QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5".parse()?));
 
     let config = Config::new(tree, network);
     let store = Store::<Multicodec, Multihash>::new(config)?;
