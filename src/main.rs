@@ -12,12 +12,14 @@ use libp2p_bitswap::{Bitswap, BitswapEvent};
 use libp2p::mdns::{Mdns, MdnsEvent};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use async_std::task;
+use async_std::task::{Poll, JoinHandle, Context};
 use async_std::sync::{channel, Sender, Receiver};
 use std::io::Cursor;
-use std::ops::Deref;
+use std::ops::DerefMut;
+use std::error::Error;
 use core::pin::Pin;
 use std::process::{Command, Stdio};
-use futures::{future, Future, task::Poll};
+use futures::{Future, Stream};
 
 type BlockType = Block<Multicodec, Multihash>;
 const SEGMENT_MIN : usize = 512*1024;
@@ -28,7 +30,31 @@ struct VideoIngest {
     block_sender: Sender<BlockType>
 }
 
+#[derive(NetworkBehaviour)]
+struct P2PVideoBehaviour {
+    gossipsub: Gossipsub,
+    identify: Identify,
+    ping: Ping,
+    kad: Kademlia<MemoryStore>,
+    bitswap: Bitswap<Multihash>,
+    mdns: Mdns,
+
+    #[behaviour(ignore)]
+    block_receiver: Receiver<BlockType>
+}
+
+struct P2PVideoNode {
+    local_key: identity::Keypair,
+    local_peer_id: PeerId,
+    gossipsub_topic: gossipsub::Topic,
+    swarm: Swarm<P2PVideoBehaviour>
+}
+
 impl VideoIngest {
+    fn spawn(self) -> JoinHandle<()> {
+        task::spawn_blocking(move || self.run())
+    }
+
     fn run(self) {
         let mpegts = Command::new("ffmpeg")
             .arg("-loglevel").arg("panic")
@@ -60,51 +86,38 @@ impl VideoIngest {
     }
 }
 
-#[derive(NetworkBehaviour)]
-struct BehaviourImpl {
-    gossipsub: Gossipsub,
-    identify: Identify,
-    ping: Ping,
-    kad: Kademlia<MemoryStore>,
-    bitswap: Bitswap<Multihash>,
-    mdns: Mdns,
-
-    #[behaviour(ignore)]
-    block_receiver: Receiver<Block<Multicodec, Multihash>>,
-}
-
-impl NetworkBehaviourEventProcess<IdentifyEvent> for BehaviourImpl {
+impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
     // Called when `identify` produces an event.
     fn inject_event(&mut self, event: IdentifyEvent) {
         println!("identify {:?}", event);
     }
 }
 
-impl NetworkBehaviourEventProcess<GossipsubEvent> for BehaviourImpl {
+impl NetworkBehaviourEventProcess<GossipsubEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: GossipsubEvent) {
         println!("gossipsub {:?}", event);
     }
 }
 
-impl NetworkBehaviourEventProcess<PingEvent> for BehaviourImpl {
+impl NetworkBehaviourEventProcess<PingEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: PingEvent) {
         println!("ping {:?}", event);
     }
 }
 
-impl NetworkBehaviourEventProcess<KademliaEvent> for BehaviourImpl {
+impl NetworkBehaviourEventProcess<KademliaEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: KademliaEvent) {
         println!("kad {:?}", event);
     }
 }
 
-impl NetworkBehaviourEventProcess<BitswapEvent> for BehaviourImpl {
+impl NetworkBehaviourEventProcess<BitswapEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: BitswapEvent) {
         println!("bitswap {:?}", event);
     }
 }
 
-impl NetworkBehaviourEventProcess<MdnsEvent> for BehaviourImpl {
+impl NetworkBehaviourEventProcess<MdnsEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: MdnsEvent) {
         match event {
             MdnsEvent::Discovered(list) => {
@@ -118,20 +131,14 @@ impl NetworkBehaviourEventProcess<MdnsEvent> for BehaviourImpl {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
-
-    let local_key = identity::Keypair::generate_ed25519();
-    let local_peer_id = PeerId::from(local_key.public());
-    let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
-    let (block_sender, block_receiver) = channel(32);
-
-    let vid = VideoIngest { block_sender, src: "https://live.diode.zone/hls/eyesopod/index.m3u8" };
-    task::spawn_blocking(move || vid.run());
-
-    let mut swarm = {
+impl P2PVideoNode {
+    fn new(block_receiver : Receiver<BlockType>) -> Result<P2PVideoNode, Box<dyn Error>> {
+        let local_key = identity::Keypair::generate_ed25519();
+        let local_peer_id = PeerId::from(local_key.public());
+        let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
         let transport = libp2p::build_development_transport(local_key.clone())?;
-        let mut behaviour = BehaviourImpl {
+
+        let mut behaviour = P2PVideoBehaviour {
             gossipsub: Gossipsub::new(
                 MessageAuthenticity::Signed(local_key.clone()),
                 GossipsubConfigBuilder::new()
@@ -150,31 +157,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             mdns: Mdns::new()?,
             block_receiver,
         };
+
         behaviour.gossipsub.subscribe(gossipsub_topic.clone());
-        Swarm::new(transport, behaviour, local_peer_id.clone())
-    };
 
-    Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
+        let mut swarm = Swarm::new(transport, behaviour, local_peer_id.clone());
+        Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-    task::block_on(future::poll_fn(move |cx| {
+        Ok(P2PVideoNode {
+            local_key,
+            local_peer_id,
+            gossipsub_topic,
+            swarm
+        })
+    }
+}
 
-        while let Ok(block) = swarm.deref().block_receiver.try_recv() {
-            let block_size = block.data.len();
-            let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
-            println!("block size {} cid {}", block_size, cid_str);
+impl Future for P2PVideoNode {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
+        loop {
+            let mut event_pending_counter = 2;
+            let block_receiver_event = Pin::new(&mut self.swarm.deref_mut().block_receiver).poll_next(ctx);
+            let network_event = Pin::new(&mut self.swarm).poll_next(ctx);
+
+            match block_receiver_event {
+                Poll::Pending => event_pending_counter -= 1,
+                Poll::Ready(None) => return Poll::Ready(()),
+                Poll::Ready(Some(block)) => {
+                    let block_size = block.data.len();
+                    let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
+                    println!("block size {} cid {}", block_size, cid_str);
+                },
+            }
+
+            match network_event {
+                Poll::Pending => event_pending_counter -= 1,
+
+                Poll::Ready(x) => {
+                    println!("network event {:?}", x);
+                },
+            }
+
+            if event_pending_counter == 0 {
+                return Poll::Pending;
+            }
         }
+    }
+}
 
-        let mut event_future = swarm.next_event();
-        match Pin::new(&mut event_future).poll(cx) {
-            Poll::Ready(SwarmEvent::NewListenAddr(addr)) => {
-                println!("serving {}/p2p/{}", addr, local_peer_id);
-            },
-            Poll::Ready(x) => {
-                println!("other event {:?}", x);
-            },
-            Poll::Pending => ()
-        };
-
-        Poll::Pending
-    }))
+fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
+    let (block_sender, block_receiver) = channel(32);
+    VideoIngest {block_sender, src: "https://live.diode.zone/hls/eyesopod/index.m3u8"}.spawn();
+    let node = P2PVideoNode::new(block_receiver)?;
+    task::block_on(node);
+    Ok(())
 }
