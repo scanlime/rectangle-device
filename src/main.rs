@@ -44,7 +44,6 @@ struct P2PVideoBehaviour {
 }
 
 struct P2PVideoNode {
-    local_key: identity::Keypair,
     local_peer_id: PeerId,
     gossipsub_topic: gossipsub::Topic,
     swarm: Swarm<P2PVideoBehaviour>
@@ -164,7 +163,6 @@ impl P2PVideoNode {
         Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
 
         Ok(P2PVideoNode {
-            local_key,
             local_peer_id,
             gossipsub_topic,
             swarm
@@ -179,7 +177,7 @@ impl Future for P2PVideoNode {
         loop {
             let mut event_pending_counter = 2;
             let block_receiver_event = Pin::new(&mut self.swarm.deref_mut().block_receiver).poll_next(ctx);
-            let network_event = Pin::new(&mut self.swarm).poll_next(ctx);
+            let network_event = unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
 
             match block_receiver_event {
                 Poll::Pending => event_pending_counter -= 1,
@@ -187,12 +185,19 @@ impl Future for P2PVideoNode {
                 Poll::Ready(Some(block)) => {
                     let block_size = block.data.len();
                     let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
-                    println!("block size {} cid {}", block_size, cid_str);
+                    let topic = self.gossipsub_topic.clone();
+                    let publish_result = self.swarm.gossipsub.publish(&topic, block.cid.to_bytes());
+
+                    println!("block size {} cid {} pub {:?}", block_size, cid_str, publish_result);
                 },
             }
 
             match network_event {
                 Poll::Pending => event_pending_counter -= 1,
+
+                Poll::Ready(SwarmEvent::NewListenAddr(addr)) => {
+                    println!("listening at {}/p2p/{}", addr, self.local_peer_id);
+                },
 
                 Poll::Ready(x) => {
                     println!("network event {:?}", x);
