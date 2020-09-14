@@ -1,5 +1,5 @@
 use multibase::Base;
-use libipld::{block::Block, raw::RawCodec};
+use libipld::{cid::Cid, block::Block, raw::RawCodec};
 use libipld::multihash::{Multihash, SHA2_256};
 use libipld::codec_impl::Multicodec;
 use libp2p::{identity, gossipsub, PeerId, Swarm, NetworkBehaviour};
@@ -17,9 +17,11 @@ use async_std::sync::{channel, Sender, Receiver};
 use std::io::Cursor;
 use std::ops::DerefMut;
 use std::error::Error;
+use std::convert::TryFrom;
 use core::pin::Pin;
 use std::process::{Command, Stdio};
 use futures::{Future, Stream};
+use env_logger::Env;
 
 type BlockType = Block<Multicodec, Multihash>;
 const SEGMENT_MIN : usize = 512*1024;
@@ -93,7 +95,16 @@ impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
 
 impl NetworkBehaviourEventProcess<GossipsubEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: GossipsubEvent) {
-        log::trace!("gossipsub {:?}", event);
+        match event {
+            GossipsubEvent::Subscribed{..} => {},
+            GossipsubEvent::Unsubscribed{..} => {},
+            GossipsubEvent::Message(peer_id, _, message) => {
+                if let Ok(cid) = Cid::try_from(message.data) {
+                    let cid_str = cid.to_string_of_base(Base::Base32Lower).unwrap();
+                    log::info!("peer {} says {}", peer_id, cid_str);
+                }
+            }
+        }
     }
 }
 
@@ -118,13 +129,13 @@ impl NetworkBehaviourEventProcess<BitswapEvent> for P2PVideoBehaviour {
 impl NetworkBehaviourEventProcess<MdnsEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: MdnsEvent) {
         match event {
+            MdnsEvent::Expired(_) => {},
             MdnsEvent::Discovered(list) => {
                 for (peer, _) in list {
-                    log::info!("mdns discovered {:?}", peer);
+                    log::trace!("mdns discovered {:?}", peer);
                     self.bitswap.connect(peer);
                 }
-            },
-            MdnsEvent::Expired(_) => {}
+            }
         }
     }
 }
@@ -211,7 +222,7 @@ impl Future for P2PVideoNode {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    env_logger::from_env(Env::default().default_filter_or("rust_ipfs_toy=info")).init();
     let (block_sender, block_receiver) = channel(32);
     VideoIngest {block_sender, src: "https://live.diode.zone/hls/eyesopod/index.m3u8"}.spawn();
     let node = P2PVideoNode::new(block_receiver)?;
