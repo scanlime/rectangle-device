@@ -86,33 +86,32 @@ impl VideoIngest {
 }
 
 impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
-    // Called when `identify` produces an event.
     fn inject_event(&mut self, event: IdentifyEvent) {
-        println!("identify {:?}", event);
+        log::trace!("identify {:?}", event);
     }
 }
 
 impl NetworkBehaviourEventProcess<GossipsubEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: GossipsubEvent) {
-        println!("gossipsub {:?}", event);
+        log::trace!("gossipsub {:?}", event);
     }
 }
 
 impl NetworkBehaviourEventProcess<PingEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: PingEvent) {
-        println!("ping {:?}", event);
+        log::trace!("ping {:?}", event);
     }
 }
 
 impl NetworkBehaviourEventProcess<KademliaEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: KademliaEvent) {
-        println!("kad {:?}", event);
+        log::trace!("kad {:?}", event);
     }
 }
 
 impl NetworkBehaviourEventProcess<BitswapEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: BitswapEvent) {
-        println!("bitswap {:?}", event);
+        log::trace!("bitswap {:?}", event);
     }
 }
 
@@ -188,7 +187,7 @@ impl Future for P2PVideoNode {
                     let topic = self.gossipsub_topic.clone();
                     let publish_result = self.swarm.gossipsub.publish(&topic, block.cid.to_bytes());
 
-                    println!("block size {} cid {} pub {:?}", block_size, cid_str, publish_result);
+                    log::info!("block size {} cid {} pub {:?}", block_size, cid_str, publish_result);
                 },
             }
 
@@ -196,11 +195,11 @@ impl Future for P2PVideoNode {
                 Poll::Pending => event_pending_counter -= 1,
 
                 Poll::Ready(SwarmEvent::NewListenAddr(addr)) => {
-                    println!("listening at {}/p2p/{}", addr, self.local_peer_id);
+                    log::info!("listening at {}/p2p/{}", addr, self.local_peer_id);
                 },
 
                 Poll::Ready(x) => {
-                    println!("network event {:?}", x);
+                    log::trace!("network event {:?}", x);
                 },
             }
 
