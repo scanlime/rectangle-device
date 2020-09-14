@@ -11,9 +11,52 @@ use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p_bitswap::{Bitswap, BitswapEvent};
 use libp2p::mdns::{Mdns, MdnsEvent};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
-use async_std::{task, sync::channel};
+use async_std::task;
+use async_std::sync::{channel, Sender, Receiver};
 use std::io::Cursor;
+use std::ops::Deref;
 use std::process::{Command, Stdio};
+
+type BlockType = Block<Multicodec, Multihash>;
+const SEGMENT_MIN : usize = 512*1024;
+const SEGMENT_MAX : usize = 1024*1024;
+
+struct VideoIngest {
+    src: &'static str,
+    block_sender: Sender<BlockType>
+}
+
+impl VideoIngest {
+    fn run(self) {
+        let mpegts = Command::new("ffmpeg")
+            .arg("-loglevel").arg("panic")
+            .arg("-nostdin")
+            .arg("-i").arg(self.src)
+            .arg("-c").arg("copy")
+            .arg("-f").arg("mpegts").arg("-")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn().unwrap()
+            .stdout.take().unwrap();
+
+        let mut reader = TsPacketReader::new(mpegts);
+        let mut buffer = [0 as u8; SEGMENT_MAX];
+        let mut cursor = Cursor::new(&mut buffer[..]);
+
+        while let Some(packet) = reader.read_ts_packet().unwrap() {
+            let is_keyframe = packet.adaptation_field.as_ref().map_or(false, |a| a.random_access_indicator);
+            let position = cursor.position() as usize;
+            if (is_keyframe && position >= SEGMENT_MIN) || (position + TsPacket::SIZE > SEGMENT_MAX) {
+                cursor.set_position(0);
+                let segment = cursor.get_ref().get(0 .. position).unwrap();
+                let block = Block::encode(RawCodec, SHA2_256, segment).unwrap();
+                task::block_on(self.block_sender.send(block));
+            }
+            let mut writer = TsPacketWriter::new(&mut cursor);
+            writer.write_ts_packet(&packet).unwrap();
+        }
+    }
+}
 
 #[derive(NetworkBehaviour)]
 struct BehaviourImpl {
@@ -23,6 +66,9 @@ struct BehaviourImpl {
     kad: Kademlia<MemoryStore>,
     bitswap: Bitswap<Multihash>,
     mdns: Mdns,
+
+    #[behaviour(ignore)]
+    block_receiver: Receiver<Block<Multicodec, Multihash>>,
 }
 
 impl NetworkBehaviourEventProcess<IdentifyEvent> for BehaviourImpl {
@@ -75,60 +121,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
-    let transport = libp2p::build_development_transport(local_key.clone())?;
     let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
-    let (block_sender, block_receiver) = channel(8);
+    let (block_sender, block_receiver) = channel(32);
 
-    task::spawn_blocking(move || {
-        // Get an mpeg transport stream of isopods
-        let mpegts = Command::new("ffmpeg")
-            .arg("-loglevel").arg("panic")
-            .arg("-nostdin")
-            .arg("-i").arg("https://live.diode.zone/hls/eyesopod/index.m3u8")
-            .arg("-c").arg("copy")
-            .arg("-f").arg("mpegts").arg("-")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn().unwrap()
-            .stdout.take().unwrap();
-
-        // Break it at points where the mpegts random access indicator is set,
-        // with a preset minimum and maximum size for each segment.
-        const SEGMENT_MIN : usize = 512*1024;
-        const SEGMENT_MAX : usize = 1024*1024;
-
-        let mut reader = TsPacketReader::new(mpegts);
-        let mut buffer = [0 as u8; SEGMENT_MAX];
-        let mut cursor = Cursor::new(&mut buffer[..]);
-
-        while let Some(packet) = reader.read_ts_packet().unwrap() {
-            let is_keyframe = packet.adaptation_field.as_ref().map_or(false, |a| a.random_access_indicator);
-            let position = cursor.position() as usize;
-            if (is_keyframe && position >= SEGMENT_MIN) || (position + TsPacket::SIZE > SEGMENT_MAX) {
-                cursor.set_position(0);
-                let segment = cursor.get_ref().get(0 .. position).unwrap();
-                let block : Block<Multicodec, Multihash> = Block::encode(RawCodec, SHA2_256, segment).unwrap();
-                task::block_on(block_sender.send(block));
-            }
-            let mut writer = TsPacketWriter::new(&mut cursor);
-            writer.write_ts_packet(&packet).unwrap();
-        }
-    });
-
-    task::spawn(async move {
-        while let Ok(block) = block_receiver.recv().await {
-            let block_size = block.data.len();
-            let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
-            println!("block size {} cid {}", block_size, cid_str);
-        }
-    });
+    let vid = VideoIngest { block_sender, src: "https://live.diode.zone/hls/eyesopod/index.m3u8" };
+    task::spawn_blocking(move || vid.run());
 
     let mut swarm = {
-        let gossipsub_config = GossipsubConfigBuilder::new()
-            .max_transmit_size(262144)
-            .build();
+        let transport = libp2p::build_development_transport(local_key.clone())?;
         let mut behaviour = BehaviourImpl {
-            gossipsub: Gossipsub::new(MessageAuthenticity::Signed(local_key.clone()), gossipsub_config),
+            gossipsub: Gossipsub::new(
+                MessageAuthenticity::Signed(local_key.clone()),
+                GossipsubConfigBuilder::new()
+                    .max_transmit_size(262144)
+                    .build()
+            ),
             identify: Identify::new(
                 "/ipfs/0.1.0".into(),
                 "rectangle-device".into(),
@@ -136,8 +143,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
             ping: Ping::new(PingConfig::new()),
             bitswap: Bitswap::new(),
-            kad: Kademlia::new(local_peer_id.clone(), MemoryStore::new(local_peer_id.clone())),
+            kad: Kademlia::new(local_peer_id.clone(),
+                MemoryStore::new(local_peer_id.clone())),
             mdns: Mdns::new()?,
+            block_receiver,
         };
         behaviour.gossipsub.subscribe(gossipsub_topic.clone());
         Swarm::new(transport, behaviour, local_peer_id.clone())
@@ -145,16 +154,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-    task::block_on(async {
+    task::block_on(async move {
         loop {
             let event = swarm.next_event().await;
-            log::trace!("{:?}", event);
+
+            while let Ok(block) = swarm.deref().block_receiver.try_recv() {
+                let block_size = block.data.len();
+                let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
+                println!("block size {} cid {}", block_size, cid_str);
+            }
+
             match event {
                 SwarmEvent::NewListenAddr(addr) => {
                     println!("serving {}/p2p/{}", addr, local_peer_id);
                 },
                 _ => {}
             };
+
         }
     })
 }
+
+/*
+ * to do: implement future w concurrent polling of swarm and pipes. see ipfs-embed
+ *       for a relatively modern use of libp2p with futures...
+ impl<C: Codec, M: MultihashDigest> Future for Network<C, M> {
+     type Output = ();
+
+     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
+         loop {
+             let event = match Pin::new(&mut self.subscriber).poll_next(ctx) {
+                 Poll::Ready(Some(event)) => event,
+                 Poll::Ready(None) => return Poll::Ready(()),
+                 Poll::Pending => break,
+             };
+             log::trace!("{:?}", event);
+             */
