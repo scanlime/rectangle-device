@@ -11,7 +11,7 @@ use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p_bitswap::{Bitswap, BitswapEvent};
 use libp2p::mdns::{Mdns, MdnsEvent};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
-use async_std::task;
+use async_std::{task, sync::channel};
 use std::io::Cursor;
 use std::process::{Command, Stdio};
 
@@ -77,11 +77,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let local_peer_id = PeerId::from(local_key.public());
     let transport = libp2p::build_development_transport(local_key.clone())?;
     let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
+    let (block_sender, block_receiver) = channel(8);
 
-    task::spawn_blocking(|| {
+    task::spawn_blocking(move || {
         // Get an mpeg transport stream of isopods
         let mpegts = Command::new("ffmpeg")
             .arg("-loglevel").arg("panic")
+            .arg("-nostdin")
             .arg("-i").arg("https://live.diode.zone/hls/eyesopod/index.m3u8")
             .arg("-c").arg("copy")
             .arg("-f").arg("mpegts").arg("-")
@@ -106,12 +108,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cursor.set_position(0);
                 let segment = cursor.get_ref().get(0 .. position).unwrap();
                 let block : Block<Multicodec, Multihash> = Block::encode(RawCodec, SHA2_256, segment).unwrap();
-                let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
-
-                println!("block size {} cid {}", segment.len(), cid_str);
+                task::block_on(block_sender.send(block));
             }
             let mut writer = TsPacketWriter::new(&mut cursor);
             writer.write_ts_packet(&packet).unwrap();
+        }
+    });
+
+    task::spawn(async move {
+        while let Ok(block) = block_receiver.recv().await {
+            let block_size = block.data.len();
+            let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
+            println!("block size {} cid {}", block_size, cid_str);
         }
     });
 
