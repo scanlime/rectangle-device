@@ -15,7 +15,9 @@ use async_std::task;
 use async_std::sync::{channel, Sender, Receiver};
 use std::io::Cursor;
 use std::ops::Deref;
+use core::pin::Pin;
 use std::process::{Command, Stdio};
+use futures::{future, Future, task::Poll};
 
 type BlockType = Block<Multicodec, Multihash>;
 const SEGMENT_MIN : usize = 512*1024;
@@ -154,39 +156,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-    task::block_on(async move {
-        loop {
-            let event = swarm.next_event().await;
+    task::block_on(future::poll_fn(move |cx| {
 
-            while let Ok(block) = swarm.deref().block_receiver.try_recv() {
-                let block_size = block.data.len();
-                let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
-                println!("block size {} cid {}", block_size, cid_str);
-            }
-
-            match event {
-                SwarmEvent::NewListenAddr(addr) => {
-                    println!("serving {}/p2p/{}", addr, local_peer_id);
-                },
-                _ => {}
-            };
-
+        while let Ok(block) = swarm.deref().block_receiver.try_recv() {
+            let block_size = block.data.len();
+            let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
+            println!("block size {} cid {}", block_size, cid_str);
         }
-    })
+
+        let mut event_future = swarm.next_event();
+        match Pin::new(&mut event_future).poll(cx) {
+            Poll::Ready(SwarmEvent::NewListenAddr(addr)) => {
+                println!("serving {}/p2p/{}", addr, local_peer_id);
+            },
+            Poll::Ready(x) => {
+                println!("other event {:?}", x);
+            },
+            Poll::Pending => ()
+        };
+
+        Poll::Pending
+    }))
 }
-
-/*
- * to do: implement future w concurrent polling of swarm and pipes. see ipfs-embed
- *       for a relatively modern use of libp2p with futures...
- impl<C: Codec, M: MultihashDigest> Future for Network<C, M> {
-     type Output = ();
-
-     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-         loop {
-             let event = match Pin::new(&mut self.subscriber).poll_next(ctx) {
-                 Poll::Ready(Some(event)) => event,
-                 Poll::Ready(None) => return Poll::Ready(()),
-                 Poll::Pending => break,
-             };
-             log::trace!("{:?}", event);
-             */
