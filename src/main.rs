@@ -8,13 +8,14 @@ use libipld::codec_impl::Multicodec;
 use libipld::multihash::{Multihash, SHA2_256};
 use libp2p_bitswap::{Bitswap, BitswapEvent};
 use libp2p::{identity, PeerId, Swarm, NetworkBehaviour};
+use libp2p::core::multiaddr::{Multiaddr, Protocol};
 use libp2p::gossipsub::{self, Gossipsub, GossipsubConfigBuilder, MessageAuthenticity, GossipsubEvent};
 use libp2p::identify::{Identify, IdentifyEvent};
 use libp2p::kad::{self, Kademlia, KademliaEvent, KademliaConfig};
 use libp2p::kad::record::store::MemoryStore;
 use libp2p::mdns::{Mdns, MdnsEvent};
 use libp2p::ping::{Ping, PingConfig, PingEvent};
-use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess};
+use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess, NetworkBehaviour};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use multibase::Base;
 use std::borrow::Cow;
@@ -38,10 +39,13 @@ struct P2PVideoBehaviour {
     gossipsub: Gossipsub,
     identify: Identify,
     ping: Ping,
-    kad: Kademlia<MemoryStore>,
+    kad_lan: Kademlia<MemoryStore>,
+    kad_wan: Kademlia<MemoryStore>,
     bitswap: Bitswap<Multihash>,
     mdns: Mdns,
 
+    #[behaviour(ignore)]
+    peer_id: PeerId,
     #[behaviour(ignore)]
     block_receiver: Receiver<BlockType>,
     #[behaviour(ignore)]
@@ -89,6 +93,17 @@ impl VideoIngest {
     }
 }
 
+impl P2PVideoBehaviour {
+    pub fn add_router_address(&mut self, peer: &PeerId, address: Multiaddr) {
+        self.kad_wan.add_address(peer, address.clone());
+        let mut circuit = address.clone();
+        circuit.push(Protocol::P2p(peer.clone().into()));
+        circuit.push(Protocol::P2pCircuit);
+        self.inject_new_external_addr(&circuit);
+        log::info!("listening via router {}/p2p/{}", circuit, self.peer_id);
+    }
+}
+
 impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: IdentifyEvent) {
         match event {
@@ -98,7 +113,7 @@ impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
                 log::trace!("identified peer {}, observing us as {}", peer_id, observed_addr);
                 for addr in info.listen_addrs {
                     log::trace!("identified peer {}, listening at {}", peer_id, addr);
-                    self.kad.add_address(&peer_id, addr);
+                    self.kad_wan.add_address(&peer_id, addr);
                 }
             }
         }
@@ -169,10 +184,9 @@ impl P2PVideoNode {
         let local_peer_id = PeerId::from(local_key.public());
         let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
         let transport = libp2p::build_development_transport(local_key.clone())?;
-        let kad_store = MemoryStore::new(local_peer_id.clone());
         let mut kad_config : KademliaConfig = Default::default();
-        const KAD_PROTOCOL : &[u8] = b"/ipfs/lan/kad/1.0.0";
-        kad_config.set_protocol_name(Cow::Borrowed(KAD_PROTOCOL));
+        const KAD_LAN : &[u8] = b"/ipfs/lan/kad/1.0.0";
+        const KAD_WAN : &[u8] = b"/ipfs/wan/kad/1.0.0";
 
         let mut behaviour = P2PVideoBehaviour {
             gossipsub: Gossipsub::new(
@@ -188,17 +202,25 @@ impl P2PVideoNode {
             ),
             ping: Ping::new(PingConfig::new()),
             bitswap: Bitswap::new(),
-            kad: Kademlia::with_config(local_peer_id.clone(), kad_store, kad_config),
+            kad_lan: Kademlia::with_config(
+                local_peer_id.clone(),
+                MemoryStore::new(local_peer_id.clone()),
+                kad_config.set_protocol_name(Cow::Borrowed(KAD_LAN)).clone()),
+            kad_wan: Kademlia::with_config(
+                local_peer_id.clone(),
+                MemoryStore::new(local_peer_id.clone()),
+                kad_config.set_protocol_name(Cow::Borrowed(KAD_WAN)).clone()),
             mdns: Mdns::new()?,
+            peer_id: local_peer_id.clone(),
             block_store: HashMap::new(),
             block_receiver,
         };
 
-        behaviour.kad.add_address(
-            &"QmP5xLZdJ8oXrZasPUvfTSBs9GaijJEgzNdcGAuTunCNUB".parse().unwrap(),
-            "/ip4/10.0.0.8/tcp/4001".parse().unwrap());
+        behaviour.add_router_address(
+            &"QmPfAR28wzi7s4BjeH5UVhJPQhGXBojsPe4bGDwZid15jq".parse().unwrap(),
+            "/ip4/99.149.215.67/tcp/4001".parse().unwrap());
 
-        behaviour.kad.bootstrap().unwrap();
+        behaviour.kad_wan.bootstrap().unwrap();
         behaviour.gossipsub.subscribe(gossipsub_topic.clone());
 
         let mut swarm = Swarm::new(transport, behaviour, local_peer_id.clone());
@@ -229,11 +251,11 @@ impl Future for P2PVideoNode {
                     let cid_bytes = block.cid.to_bytes();
                     let hash_bytes = block.cid.hash().to_bytes();
                     let topic = self.gossipsub_topic.clone();
-                    let key = kad::record::Key::new(&hash_bytes);
 
                     let publish_result = self.swarm.gossipsub.publish(&topic, cid_bytes.clone());
+                    self.swarm.kad_lan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
+                    self.swarm.kad_wan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
                     self.swarm.block_store.insert(hash_bytes, block);
-                    self.swarm.kad.start_providing(key).unwrap();
 
                     log::info!("ingest block size {} cid {} pub {:?}", block_size, cid_str, publish_result);
                 },
@@ -245,7 +267,7 @@ impl Future for P2PVideoNode {
                 Poll::Ready(SwarmEvent::NewListenAddr(addr)) => {
                     let peer_id = Swarm::local_peer_id(&self.swarm).clone();
                     log::info!("listening at {}/p2p/{}", addr, peer_id);
-                    self.swarm.kad.add_address(&peer_id, addr);
+                    self.swarm.kad_lan.add_address(&peer_id, addr);
                 },
 
                 Poll::Ready(x) => {
