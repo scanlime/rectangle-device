@@ -25,7 +25,7 @@ use std::io::Cursor;
 use std::process::{Command, Stdio};
 
 type BlockType = Block<Multicodec, Multihash>;
-const GATEWAY: &'static str = "ipfs.cf-ipfs.com";
+const IPFS_GATEWAY: &'static str = "ipfs.cf-ipfs.com";
 
 struct VideoIngest {
     src: &'static str,
@@ -95,7 +95,7 @@ impl TableOfContents {
         let contents_ipld: Ipld = pb_node.into();
 
         let block = Block::encode(DagPbCodec, SHA2_256, &contents_ipld).unwrap();
-        log::info!("table-of-contents https://{}.{}", block.cid.to_string(), GATEWAY);
+        println!("https://{}.{}", block.cid.to_string(), IPFS_GATEWAY);
 
         block
     }
