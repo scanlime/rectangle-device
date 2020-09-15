@@ -2344,7 +2344,6 @@ dependencies = [
  "libp2p-bitswap",
  "log",
  "mpeg2ts",
- "multibase",
 ]
 
 [[package]]

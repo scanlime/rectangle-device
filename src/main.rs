@@ -17,9 +17,8 @@ use libp2p::mdns::{Mdns, MdnsEvent};
 use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess, NetworkBehaviour};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
-use multibase::Base;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::convert::TryFrom;
 use std::error::Error;
 use std::io::Cursor;
@@ -47,7 +46,9 @@ struct P2PVideoBehaviour {
     #[behaviour(ignore)]
     block_receiver: Receiver<BlockType>,
     #[behaviour(ignore)]
-    block_store: BTreeMap<Vec<u8>, BlockType>
+    block_store: BTreeMap<Vec<u8>, BlockType>,
+    #[behaviour(ignore)]
+    send_queue: VecDeque<(PeerId, Cid)>
 }
 
 struct P2PVideoNode {
@@ -102,7 +103,7 @@ impl VideoIngest {
     }
 
     fn run(self) {
-        const SEGMENT_MIN : usize = 512*1024;
+        const SEGMENT_MIN : usize = 768*1024;
         const SEGMENT_MAX : usize = 1024*1024;
 
         let mpegts = Command::new("ffmpeg")
@@ -176,8 +177,7 @@ impl NetworkBehaviourEventProcess<GossipsubEvent> for P2PVideoBehaviour {
             GossipsubEvent::Unsubscribed{..} => {},
             GossipsubEvent::Message(peer_id, _, message) => {
                 if let Ok(cid) = Cid::try_from(message.data) {
-                    let cid_str = cid.to_string_of_base(Base::Base32Lower).unwrap();
-                    log::info!("peer {} says {}", peer_id, cid_str);
+                    log::info!("peer {} says {}", peer_id, cid.to_string());
                 }
             }
         }
@@ -204,9 +204,9 @@ impl NetworkBehaviourEventProcess<BitswapEvent> for P2PVideoBehaviour {
                 log::info!("received block {} {} {}", peer_id, cid.to_string(), data.len());
             },
             BitswapEvent::ReceivedWant(peer_id, cid, _) => {
-                if let Some(block) = self.block_store.get(&cid.hash().to_bytes()) {
-                    log::info!("SENDING block in response to want, {} {}", peer_id, cid.to_string());
-                    self.bitswap.send_block(&peer_id, cid, block.data.clone());
+                if self.block_store.contains_key(&cid.hash().to_bytes()) {
+                    log::info!("peer {} wants our block {}", peer_id, cid.to_string());
+                    self.send_queue.push_back((peer_id, cid));
                 }
             },
         }
@@ -260,6 +260,7 @@ impl P2PVideoNode {
             mdns: Mdns::new()?,
             peer_id: local_peer_id.clone(),
             block_store: BTreeMap::new(),
+            send_queue: VecDeque::new(),
             block_receiver,
         };
 
@@ -301,6 +302,15 @@ impl Future for P2PVideoNode {
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         loop {
+            let queued_send = self.swarm.send_queue.pop_front();
+            if let Some((peer_id, cid)) = queued_send {
+                if let Some(block) = self.swarm.block_store.get(&cid.hash().to_bytes()) {
+                    log::info!("SENDING block in response to want, {} {}", peer_id, cid.to_string());
+                    let block_data = block.data.clone();
+                    self.swarm.bitswap.send_block(&peer_id, cid, block_data);
+                }
+            }
+
             let mut event_pending_counter = 2;
             let block_receiver_event = Pin::new(&mut self.swarm.block_receiver).poll_next(ctx);
             let network_event = unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
@@ -309,7 +319,7 @@ impl Future for P2PVideoNode {
                 Poll::Pending => event_pending_counter -= 1,
                 Poll::Ready(None) => return Poll::Ready(()),
                 Poll::Ready(Some(block)) => {
-                    let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
+                    let cid_str = block.cid.to_string();
                     let block_size = block.data.len();
                     self.store_block(block);
                     log::info!("ingest block size {} cid {}", block_size, cid_str);
