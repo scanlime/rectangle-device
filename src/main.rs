@@ -3,13 +3,13 @@ use async_std::task::{self, Poll, JoinHandle, Context};
 use core::pin::Pin;
 use env_logger::Env;
 use futures::{Future, Stream};
-use libipld::{cid::Cid, block::Block, raw::RawCodec};
-use libipld::codec_impl::Multicodec;
+use libipld::{cid::Cid, block::Block, raw::RawCodec, cbor::DagCborCodec, codec_impl::Multicodec};
 use libipld::multihash::{Multihash, SHA2_256};
 use libp2p_bitswap::{Bitswap, BitswapEvent};
 use libp2p::{identity, PeerId, Swarm, NetworkBehaviour};
 use libp2p::core::multiaddr::{Multiaddr, Protocol};
 use libp2p::gossipsub::{self, Gossipsub, GossipsubConfigBuilder, MessageAuthenticity, GossipsubEvent};
+use libp2p::gossipsub::error::PublishError;
 use libp2p::identify::{Identify, IdentifyEvent};
 use libp2p::kad::{self, Kademlia, KademliaEvent, KademliaConfig};
 use libp2p::kad::record::store::MemoryStore;
@@ -26,8 +26,6 @@ use std::io::Cursor;
 use std::process::{Command, Stdio};
 
 type BlockType = Block<Multicodec, Multihash>;
-const SEGMENT_MIN : usize = 512*1024;
-const SEGMENT_MAX : usize = 1024*1024;
 
 struct VideoIngest {
     src: &'static str,
@@ -63,6 +61,9 @@ impl VideoIngest {
     }
 
     fn run(self) {
+        const SEGMENT_MIN : usize = 512*1024;
+        const SEGMENT_MAX : usize = 1024*1024;
+
         let mpegts = Command::new("ffmpeg")
             .arg("-loglevel").arg("panic")
             .arg("-nostdin")
@@ -78,14 +79,22 @@ impl VideoIngest {
         let mut buffer = [0 as u8; SEGMENT_MAX];
         let mut cursor = Cursor::new(&mut buffer[..]);
 
+        let mut contents = vec![];
+
         while let Some(packet) = reader.read_ts_packet().unwrap() {
             let is_keyframe = packet.adaptation_field.as_ref().map_or(false, |a| a.random_access_indicator);
             let position = cursor.position() as usize;
             if (is_keyframe && position >= SEGMENT_MIN) || (position + TsPacket::SIZE > SEGMENT_MAX) {
                 cursor.set_position(0);
                 let segment = cursor.get_ref().get(0 .. position).unwrap();
+
                 let block = Block::encode(RawCodec, SHA2_256, segment).unwrap();
+                let cid = block.cid.clone();
                 task::block_on(self.block_sender.send(block));
+
+                contents.push(cid);
+                let contents_block = Block::encode(DagCborCodec, SHA2_256, &contents).unwrap();
+                task::block_on(self.block_sender.send(contents_block));
             }
             let mut writer = TsPacketWriter::new(&mut cursor);
             writer.write_ts_packet(&packet).unwrap();
@@ -191,9 +200,7 @@ impl P2PVideoNode {
         let mut behaviour = P2PVideoBehaviour {
             gossipsub: Gossipsub::new(
                 MessageAuthenticity::Signed(local_key.clone()),
-                GossipsubConfigBuilder::new()
-                    .max_transmit_size(262144)
-                    .build()
+                GossipsubConfigBuilder::new().build()
             ),
             identify: Identify::new(
                 "/ipfs/0.1.0".into(),
@@ -231,6 +238,22 @@ impl P2PVideoNode {
             swarm
         })
     }
+
+    fn store_block(&mut self, block: BlockType) {
+        let cid_bytes = block.cid.to_bytes();
+        let hash_bytes = block.cid.hash().to_bytes();
+        let topic = self.gossipsub_topic.clone();
+
+        match self.swarm.gossipsub.publish(&topic, cid_bytes.clone()) {
+            Ok(()) => {},
+            Err(PublishError::InsufficientPeers) => {},
+            Err(err) => log::warn!("couldn't publish, {:?}", err)
+        }
+
+        self.swarm.kad_lan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
+        self.swarm.kad_wan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
+        self.swarm.block_store.insert(hash_bytes, block);
+    }
 }
 
 impl Future for P2PVideoNode {
@@ -246,19 +269,11 @@ impl Future for P2PVideoNode {
                 Poll::Pending => event_pending_counter -= 1,
                 Poll::Ready(None) => return Poll::Ready(()),
                 Poll::Ready(Some(block)) => {
-                    let block_size = block.data.len();
                     let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
-                    let cid_bytes = block.cid.to_bytes();
-                    let hash_bytes = block.cid.hash().to_bytes();
-                    let topic = self.gossipsub_topic.clone();
-
-                    let publish_result = self.swarm.gossipsub.publish(&topic, cid_bytes.clone());
-                    self.swarm.kad_lan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
-                    self.swarm.kad_wan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
-                    self.swarm.block_store.insert(hash_bytes, block);
-
-                    log::info!("ingest block size {} cid {} pub {:?}", block_size, cid_str, publish_result);
-                },
+                    let block_size = block.data.len();
+                    self.store_block(block);
+                    log::info!("ingest block size {} cid {}", block_size, cid_str);
+                }
             }
 
             match network_event {
