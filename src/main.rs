@@ -1,27 +1,28 @@
-use multibase::Base;
-use libipld::{cid::Cid, block::Block, raw::RawCodec};
-use libipld::multihash::{Multihash, SHA2_256};
-use libipld::codec_impl::Multicodec;
-use libp2p::{identity, gossipsub, PeerId, Swarm, NetworkBehaviour};
-use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess};
-use libp2p::gossipsub::{Gossipsub, GossipsubConfigBuilder, MessageAuthenticity, GossipsubEvent};
-use libp2p::identify::{Identify, IdentifyEvent};
-use libp2p::kad::{Kademlia, KademliaEvent, record::store::MemoryStore};
-use libp2p::ping::{Ping, PingConfig, PingEvent};
-use libp2p_bitswap::{Bitswap, BitswapEvent};
-use libp2p::mdns::{Mdns, MdnsEvent};
-use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
-use async_std::task;
-use async_std::task::{Poll, JoinHandle, Context};
 use async_std::sync::{channel, Sender, Receiver};
-use std::io::Cursor;
-use std::ops::DerefMut;
-use std::error::Error;
-use std::convert::TryFrom;
+use async_std::task::{self, Poll, JoinHandle, Context};
 use core::pin::Pin;
-use std::process::{Command, Stdio};
-use futures::{Future, Stream};
 use env_logger::Env;
+use futures::{Future, Stream};
+use libipld::{cid::Cid, block::Block, raw::RawCodec};
+use libipld::codec_impl::Multicodec;
+use libipld::multihash::{Multihash, SHA2_256};
+use libp2p_bitswap::{Bitswap, BitswapEvent};
+use libp2p::{identity, PeerId, Swarm, NetworkBehaviour};
+use libp2p::gossipsub::{self, Gossipsub, GossipsubConfigBuilder, MessageAuthenticity, GossipsubEvent};
+use libp2p::identify::{Identify, IdentifyEvent};
+use libp2p::kad::{self, Kademlia, KademliaEvent, KademliaConfig};
+use libp2p::kad::record::store::MemoryStore;
+use libp2p::mdns::{Mdns, MdnsEvent};
+use libp2p::ping::{Ping, PingConfig, PingEvent};
+use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess};
+use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
+use multibase::Base;
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::error::Error;
+use std::io::Cursor;
+use std::process::{Command, Stdio};
 
 type BlockType = Block<Multicodec, Multihash>;
 const SEGMENT_MIN : usize = 512*1024;
@@ -42,11 +43,12 @@ struct P2PVideoBehaviour {
     mdns: Mdns,
 
     #[behaviour(ignore)]
-    block_receiver: Receiver<BlockType>
+    block_receiver: Receiver<BlockType>,
+    #[behaviour(ignore)]
+    block_store: HashMap<Vec<u8>, BlockType>
 }
 
 struct P2PVideoNode {
-    local_peer_id: PeerId,
     gossipsub_topic: gossipsub::Topic,
     swarm: Swarm<P2PVideoBehaviour>
 }
@@ -89,7 +91,17 @@ impl VideoIngest {
 
 impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: IdentifyEvent) {
-        log::trace!("identify {:?}", event);
+        match event {
+            IdentifyEvent::Sent{..} => {},
+            IdentifyEvent::Error{..} => {},
+            IdentifyEvent::Received{ peer_id, info, observed_addr } => {
+                log::trace!("identified peer {}, observing us as {}", peer_id, observed_addr);
+                for addr in info.listen_addrs {
+                    log::trace!("identified peer {}, listening at {}", peer_id, addr);
+                    self.kad.add_address(&peer_id, addr);
+                }
+            }
+        }
     }
 }
 
@@ -122,7 +134,18 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for P2PVideoBehaviour {
 
 impl NetworkBehaviourEventProcess<BitswapEvent> for P2PVideoBehaviour {
     fn inject_event(&mut self, event: BitswapEvent) {
-        log::trace!("bitswap {:?}", event);
+        match event {
+            BitswapEvent::ReceivedCancel(_, _) => {},
+            BitswapEvent::ReceivedBlock(peer_id, cid, data) => {
+                log::info!("received block {} {} {}", peer_id, cid.to_string(), data.len());
+            },
+            BitswapEvent::ReceivedWant(peer_id, cid, _) => {
+                if let Some(block) = self.block_store.get(&cid.hash().to_bytes()) {
+                    log::info!("SENDING block in response to want, {} {}", peer_id, cid.to_string());
+                    self.bitswap.send_block(&peer_id, cid, block.data.clone());
+                }
+            },
+        }
     }
 }
 
@@ -146,6 +169,10 @@ impl P2PVideoNode {
         let local_peer_id = PeerId::from(local_key.public());
         let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
         let transport = libp2p::build_development_transport(local_key.clone())?;
+        let kad_store = MemoryStore::new(local_peer_id.clone());
+        let mut kad_config : KademliaConfig = Default::default();
+        const KAD_PROTOCOL : &[u8] = b"/ipfs/lan/kad/1.0.0";
+        kad_config.set_protocol_name(Cow::Borrowed(KAD_PROTOCOL));
 
         let mut behaviour = P2PVideoBehaviour {
             gossipsub: Gossipsub::new(
@@ -161,19 +188,23 @@ impl P2PVideoNode {
             ),
             ping: Ping::new(PingConfig::new()),
             bitswap: Bitswap::new(),
-            kad: Kademlia::new(local_peer_id.clone(),
-                MemoryStore::new(local_peer_id.clone())),
+            kad: Kademlia::with_config(local_peer_id.clone(), kad_store, kad_config),
             mdns: Mdns::new()?,
+            block_store: HashMap::new(),
             block_receiver,
         };
 
+        behaviour.kad.add_address(
+            &"QmP5xLZdJ8oXrZasPUvfTSBs9GaijJEgzNdcGAuTunCNUB".parse().unwrap(),
+            "/ip4/10.0.0.8/tcp/4001".parse().unwrap());
+
+        behaviour.kad.bootstrap().unwrap();
         behaviour.gossipsub.subscribe(gossipsub_topic.clone());
 
         let mut swarm = Swarm::new(transport, behaviour, local_peer_id.clone());
         Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
 
         Ok(P2PVideoNode {
-            local_peer_id,
             gossipsub_topic,
             swarm
         })
@@ -186,7 +217,7 @@ impl Future for P2PVideoNode {
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         loop {
             let mut event_pending_counter = 2;
-            let block_receiver_event = Pin::new(&mut self.swarm.deref_mut().block_receiver).poll_next(ctx);
+            let block_receiver_event = Pin::new(&mut self.swarm.block_receiver).poll_next(ctx);
             let network_event = unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
 
             match block_receiver_event {
@@ -195,10 +226,16 @@ impl Future for P2PVideoNode {
                 Poll::Ready(Some(block)) => {
                     let block_size = block.data.len();
                     let cid_str = block.cid.to_string_of_base(Base::Base32Lower).unwrap();
+                    let cid_bytes = block.cid.to_bytes();
+                    let hash_bytes = block.cid.hash().to_bytes();
                     let topic = self.gossipsub_topic.clone();
-                    let publish_result = self.swarm.gossipsub.publish(&topic, block.cid.to_bytes());
+                    let key = kad::record::Key::new(&hash_bytes);
 
-                    log::info!("block size {} cid {} pub {:?}", block_size, cid_str, publish_result);
+                    let publish_result = self.swarm.gossipsub.publish(&topic, cid_bytes.clone());
+                    self.swarm.block_store.insert(hash_bytes, block);
+                    self.swarm.kad.start_providing(key).unwrap();
+
+                    log::info!("ingest block size {} cid {} pub {:?}", block_size, cid_str, publish_result);
                 },
             }
 
@@ -206,7 +243,9 @@ impl Future for P2PVideoNode {
                 Poll::Pending => event_pending_counter -= 1,
 
                 Poll::Ready(SwarmEvent::NewListenAddr(addr)) => {
-                    log::info!("listening at {}/p2p/{}", addr, self.local_peer_id);
+                    let peer_id = Swarm::local_peer_id(&self.swarm).clone();
+                    log::info!("listening at {}/p2p/{}", addr, peer_id);
+                    self.swarm.kad.add_address(&peer_id, addr);
                 },
 
                 Poll::Ready(x) => {
