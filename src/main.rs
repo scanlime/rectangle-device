@@ -62,7 +62,7 @@ struct P2PVideoNode {
     swarm: Swarm<P2PVideoBehaviour>
 }
 
-struct TableOfContents {
+struct VideoContainer {
     blocks: Vec<(Cid, usize, f32)>,
 }
 
@@ -81,34 +81,30 @@ fn make_pb_node(links: Vec<Ipld>, data: Vec<u8>) -> Ipld {
     pb_node.into()
 }
 
+fn make_raw_block(data: &[u8]) -> BlockType {
+    Block::encode(RawCodec, SHA2_256, data).unwrap()
+}
+
 fn make_unixfs_directory(links: Vec<Ipld>) -> Ipld {
     const PBTAG_TYPE: u8 = 8;
     const TYPE_DIRECTORY: u8 = 1;
     make_pb_node(links, vec![PBTAG_TYPE, TYPE_DIRECTORY])
 }
 
-async fn send_raw_block(sender: &Sender<BlockType>, data: &[u8]) -> Cid {
-    let block = Block::encode(RawCodec, SHA2_256, data).unwrap();
-    let cid = block.cid.clone();
-    sender.send(block).await;
-    cid
-}
-
-async fn send_directory(sender: &Sender<BlockType>, links: Vec<Ipld>) -> Cid {
+fn make_directory_block(links: Vec<Ipld>) -> BlockType {
     let ipld = make_unixfs_directory(links);
-    let block = Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap();
-    let cid = block.cid.clone();
-    sender.send(block).await;
-    cid
+    Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap()
 }
 
-impl TableOfContents {
-    async fn send(&self, block_sender: &Sender<BlockType>) {
+impl VideoContainer {
+    async fn send_hls_directory(&self, block_sender: &Sender<BlockType>, index_name: String) -> (Cid, usize) {
         let mut links = vec![];
         let mut segments = vec![];
+        let mut total_size = 0;
 
         for (cid, segment_bytes, segment_sec) in &self.blocks {
-            let filename = format!("z{:04}.ts", links.len() + 1);
+            total_size += *segment_bytes;
+            let filename = format!("z{}.ts", links.len() + 1);
             links.push(make_pb_link(cid.clone(), *segment_bytes, filename.clone()));
             segments.push(MediaSegment {
                 uri: filename.into(),
@@ -127,15 +123,37 @@ impl TableOfContents {
 
         let mut index_data: Vec<u8> = Vec::new();
         index.write_to(&mut index_data).unwrap();
+        let index_block = make_raw_block(&index_data);
+        total_size += index_block.data.len();
+        links.insert(0, make_pb_link(index_block.cid.clone(), index_block.data.len(), index_name));
+        block_sender.send(index_block).await;
 
-        links.insert(0, make_pb_link(
-            send_raw_block(block_sender, &index_data).await,
-            index_data.len(),
-            "index.m3u8".to_string()
-        ));
+        let dir_block = make_directory_block(links);
+        let dir_cid = dir_block.cid.clone();
+        total_size += dir_block.data.len();
+        block_sender.send(dir_block).await;
 
-        let cid = send_directory(block_sender, links).await;
-        println!("https://ipfs.io/ipfs/{}/index.m3u8", cid.to_string());
+        (dir_cid, total_size)
+    }
+
+    async fn send_player_directory(&self, block_sender: &Sender<BlockType>) -> Cid {
+        let html_name = "index.html".to_string();
+        let hls_dir_name = "video".to_string();
+        let hls_index_name = "index.m3u8".to_string();
+        let (hls_cid, hls_size) = self.send_hls_directory(block_sender, hls_index_name).await;
+
+        let html_data = format!("hi");
+        let html_block = make_raw_block(&html_data.as_bytes());
+
+        let dir_block = make_directory_block(vec![
+            make_pb_link(hls_cid, hls_size, hls_dir_name),
+            make_pb_link(html_block.cid.clone(), html_block.data.len(), html_name),
+        ]);
+
+        let dir_cid = dir_block.cid.clone();
+        block_sender.send(html_block).await;
+        block_sender.send(dir_block).await;
+        dir_cid
     }
 }
 
@@ -161,7 +179,7 @@ impl VideoIngest {
         let mut reader = TsPacketReader::new(mpegts);
         let mut segment_buffer = [0 as u8; SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
-        let mut contents = TableOfContents { blocks: vec![] };
+        let mut container = VideoContainer { blocks: vec![] };
         let mut clock_latest: Option<ClockReference> = None;
         let mut clock_first: Option<ClockReference> = None;
         let mut segment_clock: Option<ClockReference> = None;
@@ -194,12 +212,15 @@ impl VideoIngest {
                 let segment = cursor.get_ref().get(0..segment_bytes).unwrap();
 
                 // Hash the video segment here, then send it to the other task for storage
-                let cid = task::block_on(send_raw_block(&self.block_sender, segment));
+                let block = make_raw_block(segment);
+                let cid = block.cid.clone();
+                task::block_on(self.block_sender.send(block));
 
                 // Add each block to a table of contents, which is sent less frequently
-                contents.blocks.push((cid, segment_bytes, segment_sec));
-                if contents.blocks.len() % 4 == 0 {
-                    task::block_on(contents.send(&self.block_sender));
+                container.blocks.push((cid, segment_bytes, segment_sec));
+                if container.blocks.len() % 4 == 0 {
+                    let player_cid = task::block_on(container.send_player_directory(&self.block_sender));
+                    log::info!("PLAYER URL updated, https://{}.ipfs.cf-ipfs.com", player_cid.to_string());
                 }
 
                 // This 'packet' will be the first in a new segment
