@@ -55,6 +55,47 @@ struct P2PVideoNode {
     swarm: Swarm<P2PVideoBehaviour>
 }
 
+struct TableOfContents {
+    blocks: Vec<(Cid, u64)>,
+}
+
+impl TableOfContents {
+    fn to_unixfs_block(&self) -> BlockType {
+        let mut cursor = Cursor::new(vec![]);
+        let mut total_size = 0;
+
+        for (_, size) in &self.blocks {
+            total_size += size;
+        }
+
+        leb128::write::unsigned(&mut cursor, 0x08).unwrap();  // tag: UnixFS Type
+        leb128::write::unsigned(&mut cursor, 2).unwrap();     // type: UnixFS File
+
+        leb128::write::unsigned(&mut cursor, 0x18).unwrap();  // tag: UnixFS Size
+        leb128::write::unsigned(&mut cursor, total_size).unwrap();
+
+        let mut contents: Vec<Ipld> = vec![];
+
+        for (cid, size) in &self.blocks {
+            let mut pb_link = BTreeMap::<String, Ipld>::new();
+            pb_link.insert("Hash".to_string(), cid.clone().into());
+            pb_link.insert("Name".to_string(), "".to_string().into());
+            pb_link.insert("Tsize".to_string(), (*size).into());
+            contents.push(pb_link.into());
+
+            leb128::write::unsigned(&mut cursor, 0x20).unwrap();  // tag: Block size
+            leb128::write::unsigned(&mut cursor, *size).unwrap();
+        }
+
+        let mut pb_node = BTreeMap::<String, Ipld>::new();
+        pb_node.insert("Links".to_string(), contents.clone().into());
+        pb_node.insert("Data".to_string(), cursor.get_ref().to_vec().into());
+        let contents_ipld: Ipld = pb_node.into();
+
+        Block::encode(DagPbCodec, SHA2_256, &contents_ipld).unwrap()
+    }
+}
+
 impl VideoIngest {
     fn spawn(self) -> JoinHandle<()> {
         task::spawn_blocking(move || self.run())
@@ -76,34 +117,24 @@ impl VideoIngest {
             .stdout.take().unwrap();
 
         let mut reader = TsPacketReader::new(mpegts);
-        let mut buffer = [0 as u8; SEGMENT_MAX];
-        let mut cursor = Cursor::new(&mut buffer[..]);
-        let mut contents: Vec<Ipld> = vec![];
+        let mut segment_buffer = [0 as u8; SEGMENT_MAX];
+        let mut cursor = Cursor::new(&mut segment_buffer[..]);
+        let mut contents = TableOfContents { blocks: vec![] };
 
         while let Some(packet) = reader.read_ts_packet().unwrap() {
             let is_keyframe = packet.adaptation_field.as_ref().map_or(false, |a| a.random_access_indicator);
             let position = cursor.position() as usize;
             if (is_keyframe && position >= SEGMENT_MIN) || (position + TsPacket::SIZE > SEGMENT_MAX) {
                 cursor.set_position(0);
-                let segment = cursor.get_ref().get(0..position).unwrap();
+                let segment_size = position;
+                let segment = cursor.get_ref().get(0..segment_size).unwrap();
 
                 let block = Block::encode(RawCodec, SHA2_256, segment).unwrap();
                 let cid = block.cid.clone();
                 task::block_on(self.block_sender.send(block));
 
-                let mut pb_link = BTreeMap::<String, Ipld>::new();
-                pb_link.insert("Hash".to_string(), cid.into());
-                pb_link.insert("Name".to_string(), "".to_string().into());
-                pb_link.insert("Tsize".to_string(), position.into());
-                contents.push(pb_link.into());
-
-                let mut pb_node = BTreeMap::<String, Ipld>::new();
-                pb_node.insert("Data".to_string(), Vec::<u8>::new().into());
-                pb_node.insert("Links".to_string(), contents.clone().into());
-                let contents_ipld: Ipld = pb_node.into();
-
-                let contents_block = Block::encode(DagPbCodec, SHA2_256, &contents_ipld).unwrap();
-                task::block_on(self.block_sender.send(contents_block));
+                contents.blocks.push((cid, segment_size as u64));
+                task::block_on(self.block_sender.send(contents.to_unixfs_block()));
             }
             let mut writer = TsPacketWriter::new(&mut cursor);
             writer.write_ts_packet(&packet).unwrap();
