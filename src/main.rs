@@ -62,6 +62,14 @@ struct TableOfContents {
 }
 
 impl TableOfContents {
+    fn make_pb_link(cid: Cid, size: usize, name: String) -> Ipld {
+        let mut pb_link = BTreeMap::<String, Ipld>::new();
+        pb_link.insert("Hash".to_string(), cid.clone().into());
+        pb_link.insert("Name".to_string(), name.into());
+        pb_link.insert("Tsize".to_string(), size.into());
+        pb_link
+    }
+
     fn to_unixfs_block(&self) -> BlockType {
 
         let mut contents: Vec<Ipld> = vec![];
@@ -69,13 +77,7 @@ impl TableOfContents {
 
         for (cid, bytes, _) in &self.blocks {
             let ts_filename = format!("{:05}.ts", contents.len() + 1);
-
-            let mut pb_link = BTreeMap::<String, Ipld>::new();
-            pb_link.insert("Hash".to_string(), cid.clone().into());
-            pb_link.insert("Name".to_string(), ts_filename.into());
-            pb_link.insert("Tsize".to_string(), (*bytes).into());
-
-            contents.push(pb_link.into());
+            contents.push(make_pb_link(cid.clone(), ts_filename, bytes));
         }
 
         let mut pb_node = BTreeMap::<String, Ipld>::new();
