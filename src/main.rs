@@ -61,35 +61,45 @@ struct TableOfContents {
     blocks: Vec<(Cid, usize, f32)>,
 }
 
+fn make_pb_link(cid: Cid, size: usize, name: String) -> Ipld {
+    let mut pb_link = BTreeMap::<String, Ipld>::new();
+    pb_link.insert("Hash".to_string(), cid.clone().into());
+    pb_link.insert("Name".to_string(), name.into());
+    pb_link.insert("Tsize".to_string(), size.into());
+    pb_link.into()
+}
+
+fn make_pb_node(links: Vec<Ipld>, data: Vec<u8>) -> Ipld {
+    let mut pb_node = BTreeMap::<String, Ipld>::new();
+    pb_node.insert("Links".to_string(), links.into());
+    pb_node.insert("Data".to_string(), data.into());
+    pb_node.into()
+}
+
+fn make_unixfs_directory(links: Vec<Ipld>) -> Ipld {
+    const PBTAG_TYPE: u8 = 8;
+    const TYPE_DIRECTORY: u8 = 1;
+    make_pb_node(links, vec![PBTAG_TYPE, TYPE_DIRECTORY])
+}
+
 impl TableOfContents {
-    fn make_pb_link(cid: Cid, size: usize, name: String) -> Ipld {
-        let mut pb_link = BTreeMap::<String, Ipld>::new();
-        pb_link.insert("Hash".to_string(), cid.clone().into());
-        pb_link.insert("Name".to_string(), name.into());
-        pb_link.insert("Tsize".to_string(), size.into());
-        pb_link
-    }
 
-    fn to_unixfs_block(&self) -> BlockType {
+    fn to_block(&self) -> BlockType {
 
-        let mut contents: Vec<Ipld> = vec![];
-        let unixfs_dir: Vec<u8> = vec![8, 1];
+        let mut directory: Vec<Ipld> = vec![];
 
         for (cid, bytes, _) in &self.blocks {
-            let ts_filename = format!("{:05}.ts", contents.len() + 1);
-            contents.push(make_pb_link(cid.clone(), ts_filename, bytes));
+            let filename = format!("{:05}.ts", directory.len() + 1);
+            directory.push(make_pb_link(cid.clone(), *bytes, filename));
         }
 
-        let mut pb_node = BTreeMap::<String, Ipld>::new();
-        pb_node.insert("Links".to_string(), contents.clone().into());
-        pb_node.insert("Data".to_string(), unixfs_dir.into());
-        let contents_ipld: Ipld = pb_node.into();
+        let directory_ipld = make_unixfs_directory(directory);
 
-        Block::encode(DagPbCodec, SHA2_256, &contents_ipld).unwrap()
+        Block::encode(DagPbCodec, SHA2_256, &directory_ipld).unwrap()
     }
 
     async fn send(&self, block_sender: &Sender<BlockType>) {
-        let block = self.to_unixfs_block();
+        let block = self.to_block();
         let cid_str = block.cid.to_string();
         block_sender.send(block).await;
         println!("https://{}.{}", cid_str, IPFS_GATEWAY);
