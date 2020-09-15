@@ -93,27 +93,24 @@ impl TableOfContents {
         pb_node.insert("Data".to_string(), cursor.get_ref().to_vec().into());
         let contents_ipld: Ipld = pb_node.into();
 
-        let block = Block::encode(DagPbCodec, SHA2_256, &contents_ipld).unwrap();
-        println!("https://{}.{}", block.cid.to_string(), IPFS_GATEWAY);
-
-        block
+        Block::encode(DagPbCodec, SHA2_256, &contents_ipld).unwrap()
     }
 }
 
 impl VideoIngest {
-    fn spawn(self) -> JoinHandle<()> {
-        task::spawn_blocking(move || self.run())
+    fn spawn(self, args: Vec<&'static str>) -> JoinHandle<()> {
+        task::spawn_blocking(move || self.run(args))
     }
 
-    fn run(self) {
+    fn run(self, args: Vec<&'static str>) {
         const SEGMENT_MIN : usize = 768*1024;
         const SEGMENT_MAX : usize = 1024*1024;
 
+        log::info!("ingest process starting, {:?}", args);
+
         let mpegts = Command::new("ffmpeg")
-            .arg("-loglevel").arg("panic")
-            .arg("-nostdin")
-            //.arg("-i").arg("https://live.diode.zone/hls/eyesopod/index.m3u8")
-            .arg("-headers").arg("Referer: http://usnewson.com/").arg("-i").arg("http://play.usnewson.com/stream/cnn.m3u8")
+            .arg("-loglevel").arg("panic").arg("-nostdin")
+            .args(args)
             .arg("-c").arg("copy")
             .arg("-f").arg("mpegts").arg("-")
             .stdout(Stdio::piped())
@@ -139,11 +136,18 @@ impl VideoIngest {
                 task::block_on(self.block_sender.send(block));
 
                 contents.blocks.push((cid, segment_size as u64));
-                task::block_on(self.block_sender.send(contents.to_unixfs_block()));
+                if contents.blocks.len() % 10 == 0 {
+                    let block = contents.to_unixfs_block();
+                    let cid_str = block.cid.to_string();
+                    task::block_on(self.block_sender.send(block));
+                    println!("https://{}.{}", cid_str, IPFS_GATEWAY);
+                }
             }
             let mut writer = TsPacketWriter::new(&mut cursor);
             writer.write_ts_packet(&packet).unwrap();
         }
+
+        log::info!("ingest stream ended");
     }
 }
 
@@ -361,8 +365,11 @@ impl Future for P2PVideoNode {
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rust_ipfs_toy=info")).init();
     let (block_sender, block_receiver) = channel(32);
-    VideoIngest {block_sender}.spawn();
-
+    VideoIngest {block_sender}.spawn(
+        vec!["-i", "https://live.diode.zone/hls/eyesopod/index.m3u8"]
+        //vec!["-i", "http://play.usnewson.com/stream/cnn.m3u8", "-headers", "Referer: http://usnewson.com/"]
+        //vec!["-re", "-i", "https://diode.zone/static/webseed/67eb65fe-16ec-47f9-8214-9fe42d44d14b-1080.mp4"]
+    );
     let node = P2PVideoNode::new(block_receiver)?;
     task::block_on(node);
     Ok(())
