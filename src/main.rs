@@ -3,7 +3,7 @@ use async_std::task::{self, Poll, JoinHandle, Context};
 use core::pin::Pin;
 use env_logger::Env;
 use futures::{Future, Stream};
-use libipld::{cid::Cid, block::Block, raw::RawCodec, cbor::DagCborCodec, codec_impl::Multicodec};
+use libipld::{cid::Cid, block::Block, Ipld, raw::RawCodec, codec_impl::Multicodec, pb::DagPbCodec};
 use libipld::multihash::{Multihash, SHA2_256};
 use libp2p_bitswap::{Bitswap, BitswapEvent};
 use libp2p::{identity, PeerId, Swarm, NetworkBehaviour};
@@ -19,7 +19,7 @@ use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess, NetworkBehaviour};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use multibase::Base;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::error::Error;
 use std::io::Cursor;
@@ -47,7 +47,7 @@ struct P2PVideoBehaviour {
     #[behaviour(ignore)]
     block_receiver: Receiver<BlockType>,
     #[behaviour(ignore)]
-    block_store: HashMap<Vec<u8>, BlockType>
+    block_store: BTreeMap<Vec<u8>, BlockType>
 }
 
 struct P2PVideoNode {
@@ -78,22 +78,31 @@ impl VideoIngest {
         let mut reader = TsPacketReader::new(mpegts);
         let mut buffer = [0 as u8; SEGMENT_MAX];
         let mut cursor = Cursor::new(&mut buffer[..]);
-
-        let mut contents = vec![];
+        let mut contents: Vec<Ipld> = vec![];
 
         while let Some(packet) = reader.read_ts_packet().unwrap() {
             let is_keyframe = packet.adaptation_field.as_ref().map_or(false, |a| a.random_access_indicator);
             let position = cursor.position() as usize;
             if (is_keyframe && position >= SEGMENT_MIN) || (position + TsPacket::SIZE > SEGMENT_MAX) {
                 cursor.set_position(0);
-                let segment = cursor.get_ref().get(0 .. position).unwrap();
+                let segment = cursor.get_ref().get(0..position).unwrap();
 
                 let block = Block::encode(RawCodec, SHA2_256, segment).unwrap();
                 let cid = block.cid.clone();
                 task::block_on(self.block_sender.send(block));
 
-                contents.push(cid);
-                let contents_block = Block::encode(DagCborCodec, SHA2_256, &contents).unwrap();
+                let mut pb_link = BTreeMap::<String, Ipld>::new();
+                pb_link.insert("Hash".to_string(), cid.into());
+                pb_link.insert("Name".to_string(), "".to_string().into());
+                pb_link.insert("Tsize".to_string(), position.into());
+                contents.push(pb_link.into());
+
+                let mut pb_node = BTreeMap::<String, Ipld>::new();
+                pb_node.insert("Data".to_string(), Vec::<u8>::new().into());
+                pb_node.insert("Links".to_string(), contents.clone().into());
+                let contents_ipld: Ipld = pb_node.into();
+
+                let contents_block = Block::encode(DagPbCodec, SHA2_256, &contents_ipld).unwrap();
                 task::block_on(self.block_sender.send(contents_block));
             }
             let mut writer = TsPacketWriter::new(&mut cursor);
@@ -219,7 +228,7 @@ impl P2PVideoNode {
                 kad_config.set_protocol_name(Cow::Borrowed(KAD_WAN)).clone()),
             mdns: Mdns::new()?,
             peer_id: local_peer_id.clone(),
-            block_store: HashMap::new(),
+            block_store: BTreeMap::new(),
             block_receiver,
         };
 
