@@ -17,6 +17,7 @@ use libp2p::mdns::{Mdns, MdnsEvent};
 use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess, NetworkBehaviour};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
+use mpeg2ts::time::ClockReference;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, VecDeque};
 use std::convert::TryFrom;
@@ -57,7 +58,7 @@ struct P2PVideoNode {
 }
 
 struct TableOfContents {
-    blocks: Vec<(Cid, u64)>,
+    blocks: Vec<(Cid, usize)>,
 }
 
 impl TableOfContents {
@@ -73,7 +74,7 @@ impl TableOfContents {
         leb128::write::unsigned(&mut cursor, 2).unwrap();     // type: UnixFS File
 
         leb128::write::unsigned(&mut cursor, 0x18).unwrap();  // tag: UnixFS Size
-        leb128::write::unsigned(&mut cursor, total_size).unwrap();
+        leb128::write::unsigned(&mut cursor, total_size as u64).unwrap();
 
         let mut contents: Vec<Ipld> = vec![];
 
@@ -85,7 +86,7 @@ impl TableOfContents {
             contents.push(pb_link.into());
 
             leb128::write::unsigned(&mut cursor, 0x20).unwrap();  // tag: Block size
-            leb128::write::unsigned(&mut cursor, *size).unwrap();
+            leb128::write::unsigned(&mut cursor, *size as u64).unwrap();
         }
 
         let mut pb_node = BTreeMap::<String, Ipld>::new();
@@ -103,8 +104,10 @@ impl VideoIngest {
     }
 
     fn run(self, args: Vec<&'static str>) {
-        const SEGMENT_MIN : usize = 768*1024;
-        const SEGMENT_MAX : usize = 1024*1024;
+        const SEGMENT_MIN_BYTES : usize = 64*1024;
+        const SEGMENT_MAX_BYTES : usize = 1024*1024;
+        const SEGMENT_MIN_SEC : f64 = 1.5;
+        const SEGMENT_MAX_SEC : f64 = 5.5;
 
         log::info!("ingest process starting, {:?}", args);
 
@@ -119,30 +122,56 @@ impl VideoIngest {
             .stdout.take().unwrap();
 
         let mut reader = TsPacketReader::new(mpegts);
-        let mut segment_buffer = [0 as u8; SEGMENT_MAX];
+        let mut segment_buffer = [0 as u8; SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
         let mut contents = TableOfContents { blocks: vec![] };
+        let mut clock_latest: Option<ClockReference> = None;
+        let mut segment_clock: Option<ClockReference> = None;
 
         while let Some(packet) = reader.read_ts_packet().unwrap() {
-            let is_keyframe = packet.adaptation_field.as_ref().map_or(false, |a| a.random_access_indicator);
-            let position = cursor.position() as usize;
-            if (is_keyframe && position >= SEGMENT_MIN) || (position + TsPacket::SIZE > SEGMENT_MAX) {
-                cursor.set_position(0);
-                let segment_size = position;
-                let segment = cursor.get_ref().get(0..segment_size).unwrap();
 
+            // What would the segment size be if we output one right before 'packet'
+            let segment_bytes = cursor.position() as usize;
+            let segment_ticks = clock_latest.map_or(0, |c| c.as_u64()) - segment_clock.or(clock_latest).map_or(0, |c| c.as_u64());
+            let segment_sec = (segment_ticks as f64) * (1.0 / (ClockReference::RESOLUTION as f64));
+
+            // If the 'random access indicator' flag in the adaptation field is set,
+            // treat this like a keyframe and prefer to start segments just before this packet.
+            let is_keyframe = packet.adaptation_field.as_ref().map_or(false, |a| a.random_access_indicator);
+
+            // This is the most recent timestamp we know about as of 'packet'
+            if let Some(pcr) = packet.adaptation_field.as_ref().and_then(|a| a.pcr) {
+                clock_latest = Some(pcr);
+            }
+
+            // Split on keyframes, but respect our hard limits on time and size
+            if (is_keyframe && segment_bytes >= SEGMENT_MIN_BYTES && segment_sec >= SEGMENT_MIN_SEC) ||
+               (segment_bytes + TsPacket::SIZE > SEGMENT_MAX_BYTES) ||
+               (segment_sec >= SEGMENT_MAX_SEC) {
+
+                println!("duration {}", segment_sec );
+
+                cursor.set_position(0);
+                let segment = cursor.get_ref().get(0..segment_bytes).unwrap();
+
+                // Hash the video segment here, then send it to the other task for storage
                 let block = Block::encode(RawCodec, SHA2_256, segment).unwrap();
                 let cid = block.cid.clone();
                 task::block_on(self.block_sender.send(block));
 
-                contents.blocks.push((cid, segment_size as u64));
+                // Add each block to a table of contents, which is sent less frequently
+                contents.blocks.push((cid, segment_bytes));
                 if contents.blocks.len() % 10 == 0 {
                     let block = contents.to_unixfs_block();
                     let cid_str = block.cid.to_string();
                     task::block_on(self.block_sender.send(block));
                     println!("https://{}.{}", cid_str, IPFS_GATEWAY);
                 }
+
+                // This 'packet' will be the first in a new segment
+                segment_clock = clock_latest;
             }
+
             let mut writer = TsPacketWriter::new(&mut cursor);
             writer.write_ts_packet(&packet).unwrap();
         }
@@ -366,9 +395,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rust_ipfs_toy=info")).init();
     let (block_sender, block_receiver) = channel(32);
     VideoIngest {block_sender}.spawn(
-        vec!["-i", "https://live.diode.zone/hls/eyesopod/index.m3u8"]
+        //vec!["-i", "https://live.diode.zone/hls/eyesopod/index.m3u8"]
         //vec!["-i", "http://play.usnewson.com/stream/cnn.m3u8", "-headers", "Referer: http://usnewson.com/"]
-        //vec!["-re", "-i", "https://diode.zone/static/webseed/67eb65fe-16ec-47f9-8214-9fe42d44d14b-1080.mp4"]
+        vec!["-re", "-i", "https://diode.zone/static/webseed/67eb65fe-16ec-47f9-8214-9fe42d44d14b-1080.mp4"]
     );
     let node = P2PVideoNode::new(block_receiver)?;
     task::block_on(node);
