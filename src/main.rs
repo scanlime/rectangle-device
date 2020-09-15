@@ -28,7 +28,6 @@ type BlockType = Block<Multicodec, Multihash>;
 const IPFS_GATEWAY: &'static str = "ipfs.cf-ipfs.com";
 
 struct VideoIngest {
-    src: &'static str,
     block_sender: Sender<BlockType>
 }
 
@@ -113,7 +112,8 @@ impl VideoIngest {
         let mpegts = Command::new("ffmpeg")
             .arg("-loglevel").arg("panic")
             .arg("-nostdin")
-            .arg("-i").arg(self.src)
+            //.arg("-i").arg("https://live.diode.zone/hls/eyesopod/index.m3u8")
+            .arg("-headers").arg("Referer: http://usnewson.com/").arg("-i").arg("http://play.usnewson.com/stream/cnn.m3u8")
             .arg("-c").arg("copy")
             .arg("-f").arg("mpegts").arg("-")
             .stdout(Stdio::piped())
@@ -361,7 +361,8 @@ impl Future for P2PVideoNode {
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rust_ipfs_toy=info")).init();
     let (block_sender, block_receiver) = channel(32);
-    VideoIngest {block_sender, src: "https://live.diode.zone/hls/eyesopod/index.m3u8"}.spawn();
+    VideoIngest {block_sender}.spawn();
+
     let node = P2PVideoNode::new(block_receiver)?;
     task::block_on(node);
     Ok(())
