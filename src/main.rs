@@ -238,8 +238,12 @@ impl P2PVideoNode {
         let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
         let transport = libp2p::build_development_transport(local_key.clone())?;
         let mut kad_config : KademliaConfig = Default::default();
+        let mut kad_store_config : MemoryStoreConfig = Default::default();
         const KAD_LAN : &[u8] = b"/ipfs/lan/kad/1.0.0";
         const KAD_WAN : &[u8] = b"/ipfs/wan/kad/1.0.0";
+
+        kad_store_config.max_records = 128*1024;
+        kad_store_config.max_provided_keys = 128*1024;
 
         let mut behaviour = P2PVideoBehaviour {
             gossipsub: Gossipsub::new(
@@ -255,11 +259,11 @@ impl P2PVideoNode {
             bitswap: Bitswap::new(),
             kad_lan: Kademlia::with_config(
                 local_peer_id.clone(),
-                MemoryStore::new(local_peer_id.clone()),
+                MemoryStore::with_config(local_peer_id.clone(), kad_store_config.clone()),
                 kad_config.set_protocol_name(Cow::Borrowed(KAD_LAN)).clone()),
             kad_wan: Kademlia::with_config(
                 local_peer_id.clone(),
-                MemoryStore::new(local_peer_id.clone()),
+                MemoryStore::with_config(local_peer_id.clone(), kad_store_config.clone()),
                 kad_config.set_protocol_name(Cow::Borrowed(KAD_WAN)).clone()),
             mdns: Mdns::new()?,
             peer_id: local_peer_id.clone(),
