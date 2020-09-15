@@ -16,6 +16,7 @@ use libp2p::kad::record::store::{MemoryStore, MemoryStoreConfig};
 use libp2p::mdns::{Mdns, MdnsEvent};
 use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess, NetworkBehaviour};
+use m3u8_rs::playlist::{MediaPlaylist, MediaSegment};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use mpeg2ts::time::ClockReference;
 use std::borrow::Cow;
@@ -26,11 +27,15 @@ use std::io::Cursor;
 use std::process::{Command, Stdio};
 
 type BlockType = Block<Multicodec, Multihash>;
-const IPFS_GATEWAY: &'static str = "ipfs.cf-ipfs.com";
 
 struct VideoIngest {
     block_sender: Sender<BlockType>
 }
+
+const SEGMENT_MIN_BYTES : usize = 64*1024;
+const SEGMENT_MAX_BYTES : usize = 1024*1024;
+const SEGMENT_MIN_SEC : f32 = 1.5;
+const SEGMENT_MAX_SEC : f32 = 5.5;
 
 #[derive(NetworkBehaviour)]
 struct P2PVideoBehaviour {
@@ -82,27 +87,55 @@ fn make_unixfs_directory(links: Vec<Ipld>) -> Ipld {
     make_pb_node(links, vec![PBTAG_TYPE, TYPE_DIRECTORY])
 }
 
+async fn send_raw_block(sender: &Sender<BlockType>, data: &[u8]) -> Cid {
+    let block = Block::encode(RawCodec, SHA2_256, data).unwrap();
+    let cid = block.cid.clone();
+    sender.send(block).await;
+    cid
+}
+
+async fn send_directory(sender: &Sender<BlockType>, links: Vec<Ipld>) -> Cid {
+    let ipld = make_unixfs_directory(links);
+    let block = Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap();
+    let cid = block.cid.clone();
+    sender.send(block).await;
+    cid
+}
+
 impl TableOfContents {
+    async fn send(&self, block_sender: &Sender<BlockType>) {
+        let mut links = vec![];
+        let mut segments = vec![];
 
-    fn to_block(&self) -> BlockType {
-
-        let mut directory: Vec<Ipld> = vec![];
-
-        for (cid, bytes, _) in &self.blocks {
-            let filename = format!("{:05}.ts", directory.len() + 1);
-            directory.push(make_pb_link(cid.clone(), *bytes, filename));
+        for (cid, segment_bytes, segment_sec) in &self.blocks {
+            let filename = format!("z{:04}.ts", links.len() + 1);
+            links.push(make_pb_link(cid.clone(), *segment_bytes, filename.clone()));
+            segments.push(MediaSegment {
+                uri: filename.into(),
+                duration: *segment_sec,
+                ..Default::default()
+            });
         }
 
-        let directory_ipld = make_unixfs_directory(directory);
+        let index = MediaPlaylist {
+            version: 3,
+            media_sequence: (self.blocks.len() + 1) as i32,
+            target_duration: SEGMENT_MIN_SEC,
+            segments,
+            ..Default::default()
+        };
 
-        Block::encode(DagPbCodec, SHA2_256, &directory_ipld).unwrap()
-    }
+        let mut index_data: Vec<u8> = Vec::new();
+        index.write_to(&mut index_data).unwrap();
 
-    async fn send(&self, block_sender: &Sender<BlockType>) {
-        let block = self.to_block();
-        let cid_str = block.cid.to_string();
-        block_sender.send(block).await;
-        println!("https://{}.{}", cid_str, IPFS_GATEWAY);
+        links.insert(0, make_pb_link(
+            send_raw_block(block_sender, &index_data).await,
+            index_data.len(),
+            "index.m3u8".to_string()
+        ));
+
+        let cid = send_directory(block_sender, links).await;
+        println!("https://ipfs.io/ipfs/{}/index.m3u8", cid.to_string());
     }
 }
 
@@ -112,11 +145,6 @@ impl VideoIngest {
     }
 
     fn run(self, args: Vec<String>) {
-        const SEGMENT_MIN_BYTES : usize = 64*1024;
-        const SEGMENT_MAX_BYTES : usize = 1024*1024;
-        const SEGMENT_MIN_SEC : f32 = 1.5;
-        const SEGMENT_MAX_SEC : f32 = 5.5;
-
         log::info!("ingest process starting, {:?}", args);
 
         let mpegts = Command::new("ffmpeg")
@@ -166,13 +194,11 @@ impl VideoIngest {
                 let segment = cursor.get_ref().get(0..segment_bytes).unwrap();
 
                 // Hash the video segment here, then send it to the other task for storage
-                let block = Block::encode(RawCodec, SHA2_256, segment).unwrap();
-                let cid = block.cid.clone();
-                task::block_on(self.block_sender.send(block));
+                let cid = task::block_on(send_raw_block(&self.block_sender, segment));
 
                 // Add each block to a table of contents, which is sent less frequently
                 contents.blocks.push((cid, segment_bytes, segment_sec));
-                if contents.blocks.len() % 10 == 0 {
+                if contents.blocks.len() % 4 == 0 {
                     task::block_on(contents.send(&self.block_sender));
                 }
 
