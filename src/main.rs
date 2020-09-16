@@ -32,10 +32,14 @@ struct VideoIngest {
     block_sender: Sender<BlockType>
 }
 
-// External network dependencies
+// Network dependency: public HTTPS gateway
 const IPFS_GATEWAY : &'static str = "ipfs.cf-ipfs.com";
+
+// Network dependency: hls player bundle pinned on ipfs
 const IPFS_PLAYER_CID : &'static str = "bafybeihjynl6i7ee3eimzuhy2vzm72utuwdiyzfkvhyiadwtl6mtgqcbzq";
 const IPFS_PLAYER_SIZE : usize = 2053462;
+
+// Network dependency: go-ipfs 0.7.0 relay server accessible over both TCP and WSS
 const IPFS_ROUTER_ID : &'static str = "QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5";
 const IPFS_ROUTER_ADDR_WSS : &'static str = "/dns4/ipfs.diode.zone/tcp/443/wss";
 const IPFS_ROUTER_ADDR_TCP : &'static str = "/dns4/ipfs.diode.zone/tcp/4001";
@@ -398,7 +402,6 @@ impl P2PVideoNode {
 
         behaviour.add_router_address(&IPFS_ROUTER_ID.parse().unwrap(), IPFS_ROUTER_ADDR_TCP.parse().unwrap());
         behaviour.add_router_address(&IPFS_ROUTER_ID.parse().unwrap(), IPFS_ROUTER_ADDR_UDP.parse().unwrap());
-        behaviour.add_router_address(&IPFS_ROUTER_ID.parse().unwrap(), IPFS_ROUTER_ADDR_WSS.parse().unwrap());
         behaviour.kad_wan.bootstrap().unwrap();
         behaviour.gossipsub.subscribe(gossipsub_topic.clone());
 
