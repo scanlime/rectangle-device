@@ -365,8 +365,26 @@ fn kad_store_config() -> MemoryStoreConfig {
 
 impl P2PVideoNode {
     fn new(block_receiver : Receiver<BlockType>) -> Result<P2PVideoNode, Box<dyn Error>> {
-        let local_key = identity::Keypair::generate_ed25519();
+
+        let local_key = {
+            // Using RSA keypair because the new elliptic curve based identity seems to break p2p-circuit routing
+            log::info!("generating key pair");
+            let mut genpkey = Command::new("openssl")
+                .arg("genpkey").arg("-algorithm").arg("RSA")
+                .arg("-pkeyopt").arg("rsa_keygen_bits:2048")
+                .arg("-pkeyopt").arg("rsa_keygen_pubexp:65537")
+                .stdout(Stdio::piped())
+                .spawn().unwrap();
+            let pkcs8 = Command::new("openssl")
+                .arg("pkcs8").arg("-topk8").arg("-nocrypt")
+                .arg("-outform").arg("der")
+                .stdin(Stdio::from(genpkey.stdout.take().unwrap()))
+                .output().unwrap();
+            let mut data = pkcs8.stdout.as_slice().to_vec();
+            identity::Keypair::rsa_from_pkcs8(&mut data)?
+        };
         let local_peer_id = PeerId::from(local_key.public());
+        log::info!("local identity is {}", local_peer_id.to_string());
 
         let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
         let transport = libp2p::build_development_transport(local_key.clone())?;

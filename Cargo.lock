@@ -2371,6 +2371,7 @@ dependencies = [
  "log",
  "m3u8-rs",
  "mpeg2ts",
+ "rand 0.7.3",
 ]
 
 [[package]]
