@@ -39,7 +39,7 @@ const IPFS_GATEWAY : &'static str = "ipfs.cf-ipfs.com";
 const IPFS_PLAYER_CID : &'static str = "bafybeihjynl6i7ee3eimzuhy2vzm72utuwdiyzfkvhyiadwtl6mtgqcbzq";
 const IPFS_PLAYER_SIZE : usize = 2053462;
 
-// Network dependency: go-ipfs 0.7.0 relay server accessible over both TCP and WSS
+// Network dependency: go-ipfs relay server accessible over both TCP and WSS
 const IPFS_ROUTER_ID : &'static str = "QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5";
 const IPFS_ROUTER_ADDR_WSS : &'static str = "/dns4/ipfs.diode.zone/tcp/443/wss";
 const IPFS_ROUTER_ADDR_TCP : &'static str = "/dns4/ipfs.diode.zone/tcp/4001";
@@ -257,7 +257,7 @@ impl VideoIngest {
                 container.blocks.push((cid, segment_bytes, segment_sec));
                 if container.blocks.len() % PUBLISH_INTERVAL == 0 {
                     let player_cid = task::block_on(container.send_player_directory(&self.block_sender, &local_peer_id));
-                    log::info!("PLAYER URL updated, https://{}.{}", player_cid.to_string(), IPFS_GATEWAY);
+                    log::info!("PLAYER updated, https://{}.{}", player_cid.to_string(), IPFS_GATEWAY);
                 }
 
                 // This 'packet' will be the first in a new segment
@@ -367,6 +367,7 @@ impl P2PVideoNode {
     fn new(block_receiver : Receiver<BlockType>) -> Result<P2PVideoNode, Box<dyn Error>> {
         let local_key = identity::Keypair::generate_ed25519();
         let local_peer_id = PeerId::from(local_key.public());
+
         let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
         let transport = libp2p::build_development_transport(local_key.clone())?;
         let mut kad_config : KademliaConfig = Default::default();
@@ -439,7 +440,7 @@ impl Future for P2PVideoNode {
             let queued_send = self.swarm.send_queue.pop_front();
             if let Some((peer_id, cid)) = queued_send {
                 if let Some(block) = self.swarm.block_store.get(&cid.hash().to_bytes()) {
-                    log::debug!("SENDING block in response to want, {} -> {}", cid.to_string(), peer_id);
+                    log::info!("SENDING block in response to want, {} -> {}", cid.to_string(), peer_id);
                     let block_data = block.data.clone();
                     self.swarm.bitswap.send_block(&peer_id, cid, block_data);
                 }
@@ -456,7 +457,8 @@ impl Future for P2PVideoNode {
                     let cid_str = block.cid.to_string();
                     let block_size = block.data.len();
                     self.store_block(block);
-                    log::debug!("ingest block size {} cid {}", block_size, cid_str);
+                    let netinfo = Swarm::network_info(&mut self.swarm);
+                    log::info!("ingest {} bytes, cid {} {:?}", block_size, cid_str, netinfo);
                 }
             }
 
