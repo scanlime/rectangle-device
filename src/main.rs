@@ -20,7 +20,7 @@ use m3u8_rs::playlist::{MediaPlaylist, MediaSegment};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use mpeg2ts::time::ClockReference;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::error::Error;
 use std::io::Cursor;
@@ -68,8 +68,6 @@ struct P2PVideoBehaviour {
     block_receiver: Receiver<BlockType>,
     #[behaviour(ignore)]
     block_store: BTreeMap<Vec<u8>, BlockType>,
-    #[behaviour(ignore)]
-    send_queue: VecDeque<(PeerId, Cid)>
 }
 
 struct P2PVideoNode {
@@ -335,7 +333,12 @@ impl NetworkBehaviourEventProcess<BitswapEvent> for P2PVideoBehaviour {
             BitswapEvent::ReceivedWant(peer_id, cid, _) => {
                 if self.block_store.contains_key(&cid.hash().to_bytes()) {
                     log::debug!("peer {} wants our block {}", peer_id, cid.to_string());
-                    self.send_queue.push_back((peer_id, cid));
+
+                    if let Some(block) = self.block_store.get(&cid.hash().to_bytes()) {
+                        log::info!("SENDING block in response to want, {} -> {}", cid.to_string(), peer_id);
+                        let block_data = block.data.clone();
+                        self.bitswap.send_block(&peer_id, cid, block_data);
+                    }
                 }
             },
         }
@@ -415,7 +418,6 @@ impl P2PVideoNode {
             mdns: Mdns::new()?,
             peer_id: local_peer_id.clone(),
             block_store: BTreeMap::new(),
-            send_queue: VecDeque::new(),
             block_receiver,
         };
 
@@ -455,15 +457,6 @@ impl Future for P2PVideoNode {
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         loop {
-            let queued_send = self.swarm.send_queue.pop_front();
-            if let Some((peer_id, cid)) = queued_send {
-                if let Some(block) = self.swarm.block_store.get(&cid.hash().to_bytes()) {
-                    log::info!("SENDING block in response to want, {} -> {}", cid.to_string(), peer_id);
-                    let block_data = block.data.clone();
-                    self.swarm.bitswap.send_block(&peer_id, cid, block_data);
-                }
-            }
-
             let mut event_pending_counter = 2;
             let block_receiver_event = Pin::new(&mut self.swarm.block_receiver).poll_next(ctx);
             let network_event = unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
