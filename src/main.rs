@@ -1,5 +1,5 @@
 use async_std::sync::{channel, Sender, Receiver};
-use async_std::task::{self, Poll, JoinHandle, Context};
+use async_std::task::{self, Poll, Context};
 use core::pin::Pin;
 use env_logger::Env;
 use futures::{Future, Stream};
@@ -32,10 +32,21 @@ struct VideoIngest {
     block_sender: Sender<BlockType>
 }
 
+// External network dependencies
+const IPFS_GATEWAY : &'static str = "ipfs.cf-ipfs.com";
+const IPFS_PLAYER_CID : &'static str = "bafybeihjynl6i7ee3eimzuhy2vzm72utuwdiyzfkvhyiadwtl6mtgqcbzq";
+const IPFS_PLAYER_SIZE : usize = 2053462;
+const IPFS_ROUTER_ID : &'static str = "QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5";
+const IPFS_ROUTER_ADDR_WSS : &'static str = "/dns4/ipfs.diode.zone/tcp/443/wss";
+const IPFS_ROUTER_ADDR_TCP : &'static str = "/dns4/ipfs.diode.zone/tcp/4001";
+const IPFS_ROUTER_ADDR_UDP : &'static str = "/dns4/ipfs.diode.zone/udp/4001/quic";
+
+// Settings
 const SEGMENT_MIN_BYTES : usize = 64*1024;
 const SEGMENT_MAX_BYTES : usize = 1024*1024;
 const SEGMENT_MIN_SEC : f32 = 1.5;
 const SEGMENT_MAX_SEC : f32 = 5.5;
+const PUBLISH_INTERVAL : usize = 10;
 
 #[derive(NetworkBehaviour)]
 struct P2PVideoBehaviour {
@@ -136,17 +147,43 @@ impl VideoContainer {
         (dir_cid, total_size)
     }
 
-    async fn send_player_directory(&self, block_sender: &Sender<BlockType>) -> Cid {
+    async fn send_player_directory(&self, block_sender: &Sender<BlockType>, local_peer_id: &PeerId) -> Cid {
         let html_name = "index.html".to_string();
+        let player_name = "hls-ipfs-player.js".to_string();
         let hls_dir_name = "video".to_string();
         let hls_index_name = "index.m3u8".to_string();
-        let (hls_cid, hls_size) = self.send_hls_directory(block_sender, hls_index_name).await;
+        let (hls_cid, hls_size) = self.send_hls_directory(block_sender, hls_index_name.clone()).await;
 
-        let html_data = format!("hi");
+        let html_data = format!(r#"<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=100.0, minimum-scale=1.0" />
+        <link rel="icon" href="data:," />
+        <script src="https://{player:}.{gateway:}/"></script>
+        <style>body {{ background: #000; margin: 0; }} video {{ position: absolute; width: 100%; height: 100%; left: 0; top: 0; }}</style>
+    </head>
+    <body>
+        <video muted controls
+            data-ipfs-src="{hls_cid:}/{hls_name:}"
+            data-ipfs-delegates="{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id}"
+            data-ipfs-bootstrap="{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id}"
+        ></video>
+    </body>
+</html>
+"#,
+        player = IPFS_PLAYER_CID,
+        gateway = IPFS_GATEWAY,
+        router_addr = IPFS_ROUTER_ADDR_WSS,
+        router_id = IPFS_ROUTER_ID,
+        hls_cid = hls_cid.to_string(),
+        hls_name = hls_index_name,
+        local_id = local_peer_id.to_string());
+
         let html_block = make_raw_block(&html_data.as_bytes());
-
         let dir_block = make_directory_block(vec![
             make_pb_link(hls_cid, hls_size, hls_dir_name),
+            make_pb_link(IPFS_PLAYER_CID.parse().unwrap(), IPFS_PLAYER_SIZE, player_name),
             make_pb_link(html_block.cid.clone(), html_block.data.len(), html_name),
         ]);
 
@@ -158,16 +195,12 @@ impl VideoContainer {
 }
 
 impl VideoIngest {
-    fn spawn(self, args: Vec<String>) -> JoinHandle<()> {
-        task::spawn_blocking(move || self.run(args))
-    }
-
-    fn run(self, args: Vec<String>) {
+    fn run(self, args: Vec<String>, local_peer_id: &PeerId) {
         log::info!("ingest process starting, {:?}", args);
 
         let mpegts = Command::new("ffmpeg")
             .arg("-nostats").arg("-nostdin")
-            .arg("-loglevel").arg("warning")
+            .arg("-loglevel").arg("error")
             .args(args)
             .arg("-c").arg("copy")
             .arg("-f").arg("mpegts").arg("-")
@@ -218,9 +251,9 @@ impl VideoIngest {
 
                 // Add each block to a table of contents, which is sent less frequently
                 container.blocks.push((cid, segment_bytes, segment_sec));
-                if container.blocks.len() % 4 == 0 {
-                    let player_cid = task::block_on(container.send_player_directory(&self.block_sender));
-                    log::info!("PLAYER URL updated, https://{}.ipfs.cf-ipfs.com", player_cid.to_string());
+                if container.blocks.len() % PUBLISH_INTERVAL == 0 {
+                    let player_cid = task::block_on(container.send_player_directory(&self.block_sender, &local_peer_id));
+                    log::info!("PLAYER URL updated, https://{}.{}", player_cid.to_string(), IPFS_GATEWAY);
                 }
 
                 // This 'packet' will be the first in a new segment
@@ -241,7 +274,7 @@ impl P2PVideoBehaviour {
         let mut circuit = address.clone();
         circuit.push(Protocol::P2p(peer.clone().into()));
         circuit.push(Protocol::P2pCircuit);
-        self.inject_new_external_addr(&circuit);
+        self.inject_new_listen_addr(&circuit);
         log::info!("listening via router {}/p2p/{}", circuit, self.peer_id);
     }
 }
@@ -293,11 +326,11 @@ impl NetworkBehaviourEventProcess<BitswapEvent> for P2PVideoBehaviour {
         match event {
             BitswapEvent::ReceivedCancel(_, _) => {},
             BitswapEvent::ReceivedBlock(peer_id, cid, data) => {
-                log::info!("received block {} {} {}", peer_id, cid.to_string(), data.len());
+                log::debug!("received block {} {} {}", peer_id, cid.to_string(), data.len());
             },
             BitswapEvent::ReceivedWant(peer_id, cid, _) => {
                 if self.block_store.contains_key(&cid.hash().to_bytes()) {
-                    log::info!("peer {} wants our block {}", peer_id, cid.to_string());
+                    log::debug!("peer {} wants our block {}", peer_id, cid.to_string());
                     self.send_queue.push_back((peer_id, cid));
                 }
             },
@@ -363,10 +396,9 @@ impl P2PVideoNode {
             block_receiver,
         };
 
-        behaviour.add_router_address(
-            &"QmPfAR28wzi7s4BjeH5UVhJPQhGXBojsPe4bGDwZid15jq".parse().unwrap(),
-            "/ip4/99.149.215.67/tcp/4001".parse().unwrap());
-
+        behaviour.add_router_address(&IPFS_ROUTER_ID.parse().unwrap(), IPFS_ROUTER_ADDR_TCP.parse().unwrap());
+        behaviour.add_router_address(&IPFS_ROUTER_ID.parse().unwrap(), IPFS_ROUTER_ADDR_UDP.parse().unwrap());
+        behaviour.add_router_address(&IPFS_ROUTER_ID.parse().unwrap(), IPFS_ROUTER_ADDR_WSS.parse().unwrap());
         behaviour.kad_wan.bootstrap().unwrap();
         behaviour.gossipsub.subscribe(gossipsub_topic.clone());
 
@@ -404,7 +436,7 @@ impl Future for P2PVideoNode {
             let queued_send = self.swarm.send_queue.pop_front();
             if let Some((peer_id, cid)) = queued_send {
                 if let Some(block) = self.swarm.block_store.get(&cid.hash().to_bytes()) {
-                    log::info!("SENDING block in response to want, {} -> {}", cid.to_string(), peer_id);
+                    log::debug!("SENDING block in response to want, {} -> {}", cid.to_string(), peer_id);
                     let block_data = block.data.clone();
                     self.swarm.bitswap.send_block(&peer_id, cid, block_data);
                 }
@@ -421,7 +453,7 @@ impl Future for P2PVideoNode {
                     let cid_str = block.cid.to_string();
                     let block_size = block.data.len();
                     self.store_block(block);
-                    log::info!("ingest block size {} cid {}", block_size, cid_str);
+                    log::debug!("ingest block size {} cid {}", block_size, cid_str);
                 }
             }
 
@@ -449,8 +481,12 @@ impl Future for P2PVideoNode {
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rust_ipfs_toy=info")).init();
     let (block_sender, block_receiver) = channel(32);
-    VideoIngest {block_sender}.spawn(std::env::args().skip(1).collect());
     let node = P2PVideoNode::new(block_receiver)?;
+    let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
+    let video_args = std::env::args().skip(1).collect();
+    task::spawn_blocking(move || {
+        VideoIngest {block_sender}.run(video_args, &local_peer_id)
+    });
     task::block_on(node);
     Ok(())
 }
