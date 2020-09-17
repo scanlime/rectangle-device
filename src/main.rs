@@ -56,8 +56,8 @@ const IPFS_PINNING_NAME : &'static str = "Experimental video stream from rectang
 const SEGMENT_MIN_BYTES : usize = 64*1024;
 const SEGMENT_MAX_BYTES : usize = 1024*1024;
 const SEGMENT_MIN_SEC : f32 = 1.5;
-const SEGMENT_MAX_SEC : f32 = 5.5;
-const PUBLISH_INTERVAL : usize = 10;
+const SEGMENT_MAX_SEC : f32 = 5.0;
+const PUBLISH_INTERVAL : usize = 20;
 
 type BlockType = Block<Multicodec, Multihash>;
 
