@@ -240,7 +240,7 @@ impl VideoContainer {
 
         for (cid, segment_bytes, segment_sec) in &self.blocks {
             total_size += *segment_bytes;
-            let filename = format!("z{}.ts", links.len() + 1);
+            let filename = format!("s{:05}.ts", links.len());
             links.push(make_pb_link(cid.clone(), *segment_bytes, filename.clone()));
             segments.push(MediaSegment {
                 uri: filename.into(),
@@ -249,9 +249,9 @@ impl VideoContainer {
             });
         }
 
+        // https://tools.ietf.org/html/rfc8216
         let index = MediaPlaylist {
             version: 3,
-            media_sequence: (self.blocks.len() + 1) as i32,
             target_duration: SEGMENT_MAX_SEC,
             independent_segments: true,
             playlist_type: Some(MediaPlaylistType::Vod),
