@@ -20,7 +20,8 @@ use m3u8_rs::playlist::{MediaPlaylist, MediaSegment};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use mpeg2ts::time::ClockReference;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
 use std::error::Error;
 use std::io::Cursor;
@@ -58,15 +59,6 @@ const SEGMENT_MIN_SEC : f32 = 1.5;
 const SEGMENT_MAX_SEC : f32 = 5.5;
 const PUBLISH_INTERVAL : usize = 10;
 
-#[derive(Debug)]
-enum BlockUsage {
-    VideoSegment(usize),
-    Playlist(usize),
-    VideoDirectory(usize),
-    Player(usize),
-    PlayerDirectory(usize)
-}
-
 type BlockType = Block<Multicodec, Multihash>;
 
 struct BlockInfo {
@@ -95,6 +87,8 @@ struct P2PVideoBehaviour {
     block_receiver: Receiver<BlockInfo>,
     #[behaviour(ignore)]
     block_store: BTreeMap<Vec<u8>, BlockInfo>,
+    #[behaviour(ignore)]
+    blocks_to_send: BTreeSet<BlockSendKey>
 }
 
 struct P2PVideoNode {
@@ -109,6 +103,41 @@ struct Pinner {
 
 struct VideoContainer {
     blocks: Vec<(Cid, usize, f32)>,
+}
+
+#[derive(Debug, Ord, PartialOrd, PartialEq, Eq, Clone)]
+enum BlockUsage {
+    // We try to send blocks in the same order listed here
+    PlayerDirectory(usize),
+    Player(usize),
+    VideoDirectory(usize),
+    Playlist(usize),
+    VideoSegment(usize),
+}
+
+#[derive(Eq, Debug, Clone)]
+struct BlockSendKey {
+    usage: BlockUsage,
+    cid: Cid,
+    peer_id: PeerId,
+}
+
+impl Ord for BlockSendKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.usage.cmp(&other.usage)
+    }
+}
+
+impl PartialOrd for BlockSendKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for BlockSendKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.usage == other.usage
+    }
 }
 
 fn make_pb_link(cid: Cid, size: usize, name: String) -> Ipld {
@@ -445,15 +474,11 @@ impl NetworkBehaviourEventProcess<BitswapEvent> for P2PVideoBehaviour {
                 log::debug!("received block {} {} {}", peer_id, cid.to_string(), data.len());
             },
             BitswapEvent::ReceivedWant(peer_id, cid, _) => {
-                if self.block_store.contains_key(&cid.hash().to_bytes()) {
+                // Ignore blocks we don't have, sort blocks we do by their BlockUsage, and dedupe.
+                if let Some(block_info) = self.block_store.get(&cid.hash().to_bytes()) {
+                    let usage = block_info.usage.clone();
                     log::debug!("peer {} wants our block {}", peer_id, cid.to_string());
-
-                    if let Some(block_info) = self.block_store.get(&cid.hash().to_bytes()) {
-                        let usage = &block_info.usage;
-                        log::info!("SENDING block in response to want, {} {:?} -> {}", cid.to_string(), usage, peer_id);
-                        let block_data = block_info.block.data.clone();
-                        self.bitswap.send_block(&peer_id, cid, block_data);
-                    }
+                    self.blocks_to_send.insert(BlockSendKey { usage, cid, peer_id });
                 }
             },
         }
@@ -533,6 +558,7 @@ impl P2PVideoNode {
             mdns: Mdns::new()?,
             peer_id: local_peer_id.clone(),
             block_store: BTreeMap::new(),
+            blocks_to_send: BTreeSet::new(),
             block_receiver,
         };
 
@@ -578,16 +604,30 @@ impl Future for P2PVideoNode {
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         loop {
-            let mut event_pending_counter = 2;
-            let block_receiver_event = Pin::new(&mut self.swarm.block_receiver).poll_next(ctx);
-            let network_event = unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
+            let mut event_pending_counter = 3;
 
-            match block_receiver_event {
+            match self.swarm.blocks_to_send.iter().cloned().next() {
+                None => event_pending_counter -= 1,
+                Some(send_key) => {
+                    self.swarm.blocks_to_send.remove(&send_key);
+                    if let Some(block_info) = self.swarm.block_store.get(&send_key.cid.hash().to_bytes()) {
+                        log::info!("SENDING block in response to want, {} {:?} -> {}",
+                            send_key.cid.to_string(), send_key.usage, send_key.peer_id);
+                        let peer_id = send_key.peer_id.clone();
+                        let cid = send_key.cid.clone();
+                        let data = block_info.block.data.clone();
+                        self.swarm.bitswap.send_block(&peer_id, cid, data);
+                    }
+                }
+            };
+
+            match Pin::new(&mut self.swarm.block_receiver).poll_next(ctx) {
                 Poll::Pending => event_pending_counter -= 1,
                 Poll::Ready(None) => return Poll::Ready(()),
                 Poll::Ready(Some(block_info)) => self.store_block(block_info)
             }
 
+            let network_event = unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
             match network_event {
                 Poll::Pending => event_pending_counter -= 1,
 
