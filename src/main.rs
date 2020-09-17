@@ -25,25 +25,31 @@ use std::convert::TryFrom;
 use std::error::Error;
 use std::io::Cursor;
 use std::process::{Command, Stdio};
-
-type BlockType = Block<Multicodec, Multihash>;
-
-struct VideoIngest {
-    block_sender: Sender<BlockType>
-}
+use std::time::Duration;
+use serde::{Deserialize, Serialize};
 
 // Network dependency: public HTTPS gateway
 const IPFS_GATEWAY : &'static str = "ipfs.cf-ipfs.com";
 
-// Network dependency: hls player bundle pinned on ipfs
+// Network dependency: hls player bundle pinned on IPFS.
+// This could be served anywhere it's convenient. This CID is included in the final video bundle,
+// so it will be automatically replicated by the pinning service.
+// https://github.com/scanlime/hls-ipfs-player
 const IPFS_PLAYER_CID : &'static str = "bafybeihjynl6i7ee3eimzuhy2vzm72utuwdiyzfkvhyiadwtl6mtgqcbzq";
 const IPFS_PLAYER_SIZE : usize = 2053462;
 
-// Network dependency: go-ipfs relay server accessible over both TCP and WSS
+// Network dependency: go-ipfs relay server accessible over both TCP and WSS.
+// This is used as a bootstrap for our local IPFS node, a p2p-circuit router, and a delegate for js-ipfs browser clients.
+// In a production environment this could be a public or private machine with bandwidth but no storage
 const IPFS_ROUTER_ID : &'static str = "QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5";
 const IPFS_ROUTER_ADDR_WSS : &'static str = "/dns4/ipfs.diode.zone/tcp/443/wss";
 const IPFS_ROUTER_ADDR_TCP : &'static str = "/dns4/ipfs.diode.zone/tcp/4001";
 const IPFS_ROUTER_ADDR_UDP : &'static str = "/dns4/ipfs.diode.zone/udp/4001/quic";
+
+// Network dependency: IPFS pinning services API, for requesting long-term storage of ingested video
+// https://ipfs.github.io/pinning-services-api-spec/
+const IPFS_PINNING_API : &'static str = "http://99.149.215.66:5000/api/v1";
+const IPFS_PINNING_NAME : &'static str = "Experimental video stream from rectangle-device";
 
 // Settings
 const SEGMENT_MIN_BYTES : usize = 64*1024;
@@ -51,6 +57,13 @@ const SEGMENT_MAX_BYTES : usize = 1024*1024;
 const SEGMENT_MIN_SEC : f32 = 1.5;
 const SEGMENT_MAX_SEC : f32 = 5.5;
 const PUBLISH_INTERVAL : usize = 10;
+
+type BlockType = Block<Multicodec, Multihash>;
+
+struct VideoIngest {
+    block_sender: Sender<BlockType>,
+    pin_sender: Sender<Cid>,
+}
 
 #[derive(NetworkBehaviour)]
 struct P2PVideoBehaviour {
@@ -73,6 +86,11 @@ struct P2PVideoBehaviour {
 struct P2PVideoNode {
     gossipsub_topic: gossipsub::Topic,
     swarm: Swarm<P2PVideoBehaviour>
+}
+
+struct Pinner {
+    pin_receiver: Receiver<Cid>,
+    local_peer_id: PeerId,
 }
 
 struct VideoContainer {
@@ -107,6 +125,68 @@ fn make_unixfs_directory(links: Vec<Ipld>) -> Ipld {
 fn make_directory_block(links: Vec<Ipld>) -> BlockType {
     let ipld = make_unixfs_directory(links);
     Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap()
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct APIPin {
+    cid: String,
+    name: String,
+    origins: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct APIPinStatus {
+    id: String,
+    status: String,
+    created: String,
+    pin: APIPin,
+    delegates: Vec<String>,
+}
+
+impl Pinner {
+    async fn task(self) {
+        let client = reqwest::Client::new();
+        let mut id = None;
+
+        loop {
+            let cid = self.pin_receiver.recv().await.unwrap();
+            let pin = APIPin {
+                cid: cid.to_string(),
+                name: IPFS_PINNING_NAME.to_string(),
+                origins: vec![
+                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                        router_addr = IPFS_ROUTER_ADDR_TCP,
+                        router_id = IPFS_ROUTER_ID,
+                        local_id = self.local_peer_id),
+                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                        router_addr = IPFS_ROUTER_ADDR_UDP,
+                        router_id = IPFS_ROUTER_ID,
+                        local_id = self.local_peer_id),
+                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                        router_addr = IPFS_ROUTER_ADDR_WSS,
+                        router_id = IPFS_ROUTER_ID,
+                        local_id = self.local_peer_id)
+                ]
+            };
+
+            let url = match &id {
+                None => format!("{}/pins", IPFS_PINNING_API),
+                Some(id) => format!("{}/pins/{}", IPFS_PINNING_API, id)
+            };
+
+            let result = async {
+                let result = client.post(&url).json(&pin).send().await?;
+                let status: APIPinStatus = result.json().await?;
+                log::info!("pinning api at {} says {:?}", url, status);
+                Result::<String, Box<dyn Error>>::Ok(status.id)
+            }.await;
+
+            match result {
+                Err(err) => log::error!("pinning api error, {}", err),
+                Ok(new_id) => id = Some(new_id),
+            };
+        }
+    }
 }
 
 impl VideoContainer {
@@ -168,8 +248,8 @@ impl VideoContainer {
     <body>
         <video muted controls
             data-ipfs-src="{hls_cid:}/{hls_name:}"
-            data-ipfs-delegates="{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id}"
-            data-ipfs-bootstrap="{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id}"
+            data-ipfs-delegates="{router_addr:}/p2p/{router_id:}"
+            data-ipfs-bootstrap="{router_addr:}/p2p/{router_id:} {router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id}"
         ></video>
     </body>
 </html>
@@ -254,8 +334,11 @@ impl VideoIngest {
                 // Add each block to a table of contents, which is sent less frequently
                 container.blocks.push((cid, segment_bytes, segment_sec));
                 if container.blocks.len() % PUBLISH_INTERVAL == 0 {
-                    let player_cid = task::block_on(container.send_player_directory(&self.block_sender, &local_peer_id));
-                    log::info!("PLAYER updated, https://{}.{}", player_cid.to_string(), IPFS_GATEWAY);
+                    task::block_on(async {
+                        let player_cid = container.send_player_directory(&self.block_sender, &local_peer_id).await;
+                        log::info!("PLAYER created, https://{}.{}", player_cid.to_string(), IPFS_GATEWAY);
+                        self.pin_sender.send(player_cid).await;
+                    });
                 }
 
                 // This 'packet' will be the first in a new segment
@@ -265,8 +348,10 @@ impl VideoIngest {
             let mut writer = TsPacketWriter::new(&mut cursor);
             writer.write_ts_packet(&packet).unwrap();
         }
-
-        log::warn!("ingest stream ended");
+        loop {
+            log::warn!("ingest stream ended");
+            std::thread::sleep(Duration::from_secs(10));
+        }
     }
 }
 
@@ -496,13 +581,26 @@ impl Future for P2PVideoNode {
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rust_ipfs_toy=info")).init();
+    let video_args = std::env::args().skip(1).collect();
     let (block_sender, block_receiver) = channel(32);
+    let (pin_sender, pin_receiver) = channel(32);
     let node = P2PVideoNode::new(block_receiver)?;
     let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
-    let video_args = std::env::args().skip(1).collect();
-    task::spawn_blocking(move || {
-        VideoIngest {block_sender}.run(video_args, &local_peer_id)
+
+    let pinner = Pinner {
+        pin_receiver,
+        local_peer_id: local_peer_id.clone()
+    };
+    std::thread::spawn(move || {
+        tokio::runtime::Runtime::new().unwrap().block_on(pinner.task());
     });
+
+    task::spawn_blocking(move || VideoIngest {
+        block_sender,
+        pin_sender
+    }.run(video_args, &local_peer_id));
+
     task::block_on(node);
+
     Ok(())
 }
