@@ -224,9 +224,12 @@ impl Pinner {
                 Result::<String, Box<dyn Error>>::Ok(status.id)
             }.await;
 
-            match result {
-                Err(err) => log::error!("pinning api error, {}", err),
-                Ok(new_id) => id = Some(new_id),
+            id = match result {
+                Err(err) => {
+                    log::error!("pinning api error, {}", err);
+                    None
+                },
+                Ok(new_id) => Some(new_id),
             };
         }
     }
@@ -251,9 +254,12 @@ impl VideoContainer {
 
         // https://tools.ietf.org/html/rfc8216
         let index = MediaPlaylist {
+            // Version 3 adds support for floating point durations, which we need
             version: 3,
             target_duration: SEGMENT_MAX_SEC,
-            independent_segments: true,
+            // Want to set this to true but it woud be a lie until we can split h264 too
+            independent_segments: false,
+            media_sequence: 0,
             playlist_type: Some(MediaPlaylistType::Vod),
             segments,
             ..Default::default()
@@ -355,8 +361,14 @@ impl VideoIngest {
         let mut clock_latest: Option<ClockReference> = None;
         let mut clock_first: Option<ClockReference> = None;
         let mut segment_clock: Option<ClockReference> = None;
+        let mut program_association_table: Option<TsPacket> = None;
 
         while let Some(packet) = reader.read_ts_packet().unwrap() {
+
+            // Save a copy of the PAT (Program Association Table) and reinsert it at every segment
+            if packet.header.pid.as_u16() == mpeg2ts::ts::Pid::PAT {
+                program_association_table = Some(packet.clone());
+            }
 
             // What would the segment size be if we output one right before 'packet'
             let segment_bytes = cursor.position() as usize;
@@ -401,12 +413,16 @@ impl VideoIngest {
                     });
                 }
 
-                // This 'packet' will be the first in a new segment
+                // Each segment starts with a PAT so the other packets can be identified
+                if let Some(pat) = &program_association_table {
+                    TsPacketWriter::new(&mut cursor).write_ts_packet(pat).unwrap();
+                }
+
+                // This 'packet' will be the first in a new segment after the PAT
                 segment_clock = clock_latest;
             }
 
-            let mut writer = TsPacketWriter::new(&mut cursor);
-            writer.write_ts_packet(&packet).unwrap();
+            TsPacketWriter::new(&mut cursor).write_ts_packet(&packet).unwrap();
         }
         loop {
             task::block_on(async {
