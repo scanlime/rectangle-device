@@ -58,10 +58,24 @@ const SEGMENT_MIN_SEC : f32 = 1.5;
 const SEGMENT_MAX_SEC : f32 = 5.5;
 const PUBLISH_INTERVAL : usize = 10;
 
+#[derive(Debug)]
+enum BlockUsage {
+    VideoSegment(usize),
+    Playlist(usize),
+    VideoDirectory(usize),
+    Player(usize),
+    PlayerDirectory(usize)
+}
+
 type BlockType = Block<Multicodec, Multihash>;
 
+struct BlockInfo {
+    block: BlockType,
+    usage: BlockUsage,
+}
+
 struct VideoIngest {
-    block_sender: Sender<BlockType>,
+    block_sender: Sender<BlockInfo>,
     pin_sender: Sender<Cid>,
 }
 
@@ -78,9 +92,9 @@ struct P2PVideoBehaviour {
     #[behaviour(ignore)]
     peer_id: PeerId,
     #[behaviour(ignore)]
-    block_receiver: Receiver<BlockType>,
+    block_receiver: Receiver<BlockInfo>,
     #[behaviour(ignore)]
-    block_store: BTreeMap<Vec<u8>, BlockType>,
+    block_store: BTreeMap<Vec<u8>, BlockInfo>,
 }
 
 struct P2PVideoNode {
@@ -190,7 +204,7 @@ impl Pinner {
 }
 
 impl VideoContainer {
-    async fn send_hls_directory(&self, block_sender: &Sender<BlockType>, index_name: String) -> (Cid, usize) {
+    async fn send_hls_directory(&self, block_sender: &Sender<BlockInfo>, index_name: String) -> (Cid, usize) {
         let mut links = vec![];
         let mut segments = vec![];
         let mut total_size = 0;
@@ -219,17 +233,23 @@ impl VideoContainer {
         let index_block = make_raw_block(&index_data);
         total_size += index_block.data.len();
         links.insert(0, make_pb_link(index_block.cid.clone(), index_block.data.len(), index_name));
-        block_sender.send(index_block).await;
+        block_sender.send(BlockInfo {
+            block: index_block,
+            usage: BlockUsage::Playlist(self.blocks.len())
+        }).await;
 
         let dir_block = make_directory_block(links);
         let dir_cid = dir_block.cid.clone();
         total_size += dir_block.data.len();
-        block_sender.send(dir_block).await;
+        block_sender.send(BlockInfo {
+            block: dir_block,
+            usage: BlockUsage::VideoDirectory(self.blocks.len()),
+        }).await;
 
         (dir_cid, total_size)
     }
 
-    async fn send_player_directory(&self, block_sender: &Sender<BlockType>, local_peer_id: &PeerId) -> Cid {
+    async fn send_player_directory(&self, block_sender: &Sender<BlockInfo>, local_peer_id: &PeerId) -> Cid {
         let html_name = "index.html".to_string();
         let player_name = "hls-ipfs-player.js".to_string();
         let hls_dir_name = "video".to_string();
@@ -270,8 +290,14 @@ impl VideoContainer {
         ]);
 
         let dir_cid = dir_block.cid.clone();
-        block_sender.send(html_block).await;
-        block_sender.send(dir_block).await;
+        block_sender.send(BlockInfo {
+            block: html_block,
+            usage: BlockUsage::Player(self.blocks.len()),
+        }).await;
+        block_sender.send(BlockInfo {
+            block: dir_block,
+            usage: BlockUsage::PlayerDirectory(self.blocks.len()),
+        }).await;
         dir_cid
     }
 }
@@ -329,7 +355,10 @@ impl VideoIngest {
                 // Hash the video segment here, then send it to the other task for storage
                 let block = make_raw_block(segment);
                 let cid = block.cid.clone();
-                task::block_on(self.block_sender.send(block));
+                task::block_on(self.block_sender.send(BlockInfo {
+                    block,
+                    usage: BlockUsage::VideoSegment(container.blocks.len()),
+                }));
 
                 // Add each block to a table of contents, which is sent less frequently
                 container.blocks.push((cid, segment_bytes, segment_sec));
@@ -419,9 +448,10 @@ impl NetworkBehaviourEventProcess<BitswapEvent> for P2PVideoBehaviour {
                 if self.block_store.contains_key(&cid.hash().to_bytes()) {
                     log::debug!("peer {} wants our block {}", peer_id, cid.to_string());
 
-                    if let Some(block) = self.block_store.get(&cid.hash().to_bytes()) {
-                        log::info!("SENDING block in response to want, {} -> {}", cid.to_string(), peer_id);
-                        let block_data = block.data.clone();
+                    if let Some(block_info) = self.block_store.get(&cid.hash().to_bytes()) {
+                        let usage = &block_info.usage;
+                        log::info!("SENDING block in response to want, {} {:?} -> {}", cid.to_string(), usage, peer_id);
+                        let block_data = block_info.block.data.clone();
                         self.bitswap.send_block(&peer_id, cid, block_data);
                     }
                 }
@@ -452,7 +482,7 @@ fn kad_store_config() -> MemoryStoreConfig {
 }
 
 impl P2PVideoNode {
-    fn new(block_receiver : Receiver<BlockType>) -> Result<P2PVideoNode, Box<dyn Error>> {
+    fn new(block_receiver : Receiver<BlockInfo>) -> Result<P2PVideoNode, Box<dyn Error>> {
 
         let local_key = {
             // Using RSA keypair because the new elliptic curve based identity seems to break p2p-circuit routing
@@ -520,9 +550,12 @@ impl P2PVideoNode {
         })
     }
 
-    fn store_block(&mut self, block: BlockType) {
-        let cid_bytes = block.cid.to_bytes();
-        let hash_bytes = block.cid.hash().to_bytes();
+    fn store_block(&mut self, block_info: BlockInfo) {
+        let usage = &block_info.usage;
+        let block_size = block_info.block.data.len();
+        let cid_str = block_info.block.cid.to_string();
+        let cid_bytes = block_info.block.cid.to_bytes();
+        let hash_bytes = block_info.block.cid.hash().to_bytes();
         let topic = self.gossipsub_topic.clone();
 
         match self.swarm.gossipsub.publish(&topic, cid_bytes.clone()) {
@@ -531,9 +564,12 @@ impl P2PVideoNode {
             Err(err) => log::warn!("couldn't publish, {:?}", err)
         }
 
+        let netinfo = Swarm::network_info(&mut self.swarm);
+        log::info!("ingest {} bytes, cid {} {:?} {:?}", block_size, cid_str, usage, netinfo);
+
         self.swarm.kad_lan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
         self.swarm.kad_wan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
-        self.swarm.block_store.insert(hash_bytes, block);
+        self.swarm.block_store.insert(hash_bytes, block_info);
     }
 }
 
@@ -549,13 +585,7 @@ impl Future for P2PVideoNode {
             match block_receiver_event {
                 Poll::Pending => event_pending_counter -= 1,
                 Poll::Ready(None) => return Poll::Ready(()),
-                Poll::Ready(Some(block)) => {
-                    let cid_str = block.cid.to_string();
-                    let block_size = block.data.len();
-                    self.store_block(block);
-                    let netinfo = Swarm::network_info(&mut self.swarm);
-                    log::info!("ingest {} bytes, cid {} {:?}", block_size, cid_str, netinfo);
-                }
+                Poll::Ready(Some(block_info)) => self.store_block(block_info)
             }
 
             match network_event {
