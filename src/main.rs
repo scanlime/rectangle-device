@@ -352,6 +352,13 @@ impl VideoContainer {
         // Create and send an HTML player that references the video
         block_sender.send(self.make_player(&mut links, &mut total_size, &hls_cid, hls_size, local_peer_id)).await;
 
+        // The player won't care about this at all, but let's try referencing the video segments
+        // from the player directory, to give the pinning service a head start on locating new Cids.
+        // We use the links generated here but we don't need to send the block, as it's a repeat.
+        // This also ends up double-counting the size of the video, since we list it twice, even
+        // though nobody is duplicating the actual video data.
+        self.make_playlist(&mut links, &mut total_size);
+
         let dir_block = make_directory_block(links);
         let dir_cid = dir_block.cid.clone();
         total_size += dir_block.data.len();
