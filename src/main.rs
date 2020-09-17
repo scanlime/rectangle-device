@@ -37,6 +37,7 @@ const IPFS_GATEWAY : &'static str = "ipfs.cf-ipfs.com";
 // so it will be automatically replicated by the pinning service.
 // https://github.com/scanlime/hls-ipfs-player
 const IPFS_PLAYER_CID : &'static str = "bafybeihjynl6i7ee3eimzuhy2vzm72utuwdiyzfkvhyiadwtl6mtgqcbzq";
+const IPFS_PLAYER_NAME : &'static str = "hls-ipfs-player.js";
 const IPFS_PLAYER_SIZE : usize = 2053462;
 
 // Network dependency: go-ipfs relay server accessible over both TCP and WSS.
@@ -53,6 +54,8 @@ const IPFS_PINNING_API : &'static str = "http://99.149.215.66:5000/api/v1";
 const IPFS_PINNING_NAME : &'static str = "Experimental video stream from rectangle-device";
 
 // Settings
+const HLS_FILENAME : &'static str = "index.m3u8";
+const HLS_DIRECTORY : &'static str = "video";
 const SEGMENT_MIN_BYTES : usize = 64*1024;
 const SEGMENT_MAX_BYTES : usize = 1024*1024;
 const SEGMENT_MIN_SEC : f32 = 1.5;
@@ -236,15 +239,14 @@ impl Pinner {
 }
 
 impl VideoContainer {
-    async fn send_hls_directory(&self, block_sender: &Sender<BlockInfo>, index_name: String) -> (Cid, usize) {
-        let mut links = vec![];
+    fn make_playlist(&self, links: &mut Vec<Ipld>, total_size: &mut usize) -> BlockInfo {
         let mut segments = vec![];
-        let mut total_size = 0;
+        let mut segment_links = vec![];
 
         for (cid, segment_bytes, segment_sec) in &self.blocks {
-            total_size += *segment_bytes;
-            let filename = format!("s{:05}.ts", links.len());
-            links.push(make_pb_link(cid.clone(), *segment_bytes, filename.clone()));
+            let filename = format!("s{:05}.ts", segments.len());
+            *total_size += *segment_bytes;
+            segment_links.push(make_pb_link(cid.clone(), *segment_bytes, filename.clone()));
             segments.push(MediaSegment {
                 uri: filename.into(),
                 duration: *segment_sec,
@@ -253,27 +255,81 @@ impl VideoContainer {
         }
 
         // https://tools.ietf.org/html/rfc8216
-        let index = MediaPlaylist {
+        let playlist = MediaPlaylist {
             // Version 3 adds support for floating point durations, which we need
             version: 3,
             target_duration: SEGMENT_MAX_SEC,
             // Want to set this to true but it woud be a lie until we can split h264 too
             independent_segments: false,
+            // Arbitrary 'beginning' sequence number for the video
             media_sequence: 0,
+            // Only some players care about this
             playlist_type: Some(MediaPlaylistType::Vod),
+            // hls.js prefers to use only end_list to decide if the stream is live
+            end_list: true,
             segments,
             ..Default::default()
         };
 
-        let mut index_data: Vec<u8> = Vec::new();
-        index.write_to(&mut index_data).unwrap();
-        let index_block = make_raw_block(&index_data);
-        total_size += index_block.data.len();
-        links.insert(0, make_pb_link(index_block.cid.clone(), index_block.data.len(), index_name));
-        block_sender.send(BlockInfo {
-            block: index_block,
+        let mut data: Vec<u8> = Vec::new();
+        playlist.write_to(&mut data).unwrap();
+
+        let block = make_raw_block(&data);
+        *total_size += block.data.len();
+        links.push(make_pb_link(block.cid.clone(), block.data.len(), HLS_FILENAME.to_string()));
+
+        // Add the segment links after the playlist link, in case that helps clients find it quicker
+        links.append(&mut segment_links);
+
+        BlockInfo {
+            block: block,
             usage: BlockUsage::Playlist(self.blocks.len())
-        }).await;
+        }
+    }
+
+    fn make_player(&self, links: &mut Vec<Ipld>, total_size: &mut usize, hls_cid: &Cid, hls_size: usize, local_peer_id: &PeerId) -> BlockInfo {
+        let html_data = format!(r#"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=100.0, minimum-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <script src="https://{player:}.{gateway:}/"></script>
+    <style>body {{ background: #000; margin: 0; }} video {{ position: absolute; width: 100%; height: 100%; left: 0; top: 0; }}</style>
+</head>
+<body>
+    <video muted controls
+        data-ipfs-src="{hls_cid:}/{hls_name:}"
+        data-ipfs-delegates="{router_addr:}/p2p/{router_id:}"
+        data-ipfs-bootstrap="{router_addr:}/p2p/{router_id:} {router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id}"
+    ></video>
+</body>
+</html>
+"#,
+            player = IPFS_PLAYER_CID,
+            gateway = IPFS_GATEWAY,
+            router_addr = IPFS_ROUTER_ADDR_WSS,
+            router_id = IPFS_ROUTER_ID,
+            hls_cid = hls_cid.to_string(),
+            hls_name = HLS_FILENAME,
+            local_id = local_peer_id.to_string());
+
+        let block = make_raw_block(&html_data.as_bytes());
+        links.push(make_pb_link(block.cid.clone(), block.data.len(), "index.html".to_string()));
+        links.push(make_pb_link(IPFS_PLAYER_CID.parse().unwrap(), IPFS_PLAYER_SIZE, IPFS_PLAYER_NAME.to_string()));
+        links.push(make_pb_link(hls_cid.clone(), hls_size, HLS_DIRECTORY.to_string()));
+        *total_size += block.data.len() + IPFS_PLAYER_SIZE + hls_size;
+
+        BlockInfo {
+            block: block,
+            usage: BlockUsage::Player(self.blocks.len()),
+        }
+    }
+
+    async fn send_hls_directory(&self, block_sender: &Sender<BlockInfo>) -> (Cid, usize) {
+        let mut links = vec![];
+        let mut total_size = 0;
+        block_sender.send(self.make_playlist(&mut links, &mut total_size)).await;
 
         let dir_block = make_directory_block(links);
         let dir_cid = dir_block.cid.clone();
@@ -286,56 +342,25 @@ impl VideoContainer {
         (dir_cid, total_size)
     }
 
-    async fn send_player_directory(&self, block_sender: &Sender<BlockInfo>, local_peer_id: &PeerId) -> Cid {
-        let html_name = "index.html".to_string();
-        let player_name = "hls-ipfs-player.js".to_string();
-        let hls_dir_name = "video".to_string();
-        let hls_index_name = "index.m3u8".to_string();
-        let (hls_cid, hls_size) = self.send_hls_directory(block_sender, hls_index_name.clone()).await;
+    async fn send_player_directory(&self, block_sender: &Sender<BlockInfo>, local_peer_id: &PeerId) -> (Cid, usize) {
+        let mut links = vec![];
+        let mut total_size = 0;
 
-        let html_data = format!(r#"<!DOCTYPE html>
-<html>
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=100.0, minimum-scale=1.0" />
-        <link rel="icon" href="data:," />
-        <script src="https://{player:}.{gateway:}/"></script>
-        <style>body {{ background: #000; margin: 0; }} video {{ position: absolute; width: 100%; height: 100%; left: 0; top: 0; }}</style>
-    </head>
-    <body>
-        <video muted controls
-            data-ipfs-src="{hls_cid:}/{hls_name:}"
-            data-ipfs-delegates="{router_addr:}/p2p/{router_id:}"
-            data-ipfs-bootstrap="{router_addr:}/p2p/{router_id:} {router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id}"
-        ></video>
-    </body>
-</html>
-"#,
-        player = IPFS_PLAYER_CID,
-        gateway = IPFS_GATEWAY,
-        router_addr = IPFS_ROUTER_ADDR_WSS,
-        router_id = IPFS_ROUTER_ID,
-        hls_cid = hls_cid.to_string(),
-        hls_name = hls_index_name,
-        local_id = local_peer_id.to_string());
+        // Create and send the video + playlist in HLS format
+        let (hls_cid, hls_size) = self.send_hls_directory(block_sender).await;
 
-        let html_block = make_raw_block(&html_data.as_bytes());
-        let dir_block = make_directory_block(vec![
-            make_pb_link(hls_cid, hls_size, hls_dir_name),
-            make_pb_link(IPFS_PLAYER_CID.parse().unwrap(), IPFS_PLAYER_SIZE, player_name),
-            make_pb_link(html_block.cid.clone(), html_block.data.len(), html_name),
-        ]);
+        // Create and send an HTML player that references the video
+        block_sender.send(self.make_player(&mut links, &mut total_size, &hls_cid, hls_size, local_peer_id)).await;
 
+        let dir_block = make_directory_block(links);
         let dir_cid = dir_block.cid.clone();
-        block_sender.send(BlockInfo {
-            block: html_block,
-            usage: BlockUsage::Player(self.blocks.len()),
-        }).await;
+        total_size += dir_block.data.len();
         block_sender.send(BlockInfo {
             block: dir_block,
             usage: BlockUsage::PlayerDirectory(self.blocks.len()),
         }).await;
-        dir_cid
+
+        (dir_cid, total_size)
     }
 }
 
@@ -407,8 +432,8 @@ impl VideoIngest {
                 container.blocks.push((cid, segment_bytes, segment_sec));
                 if container.blocks.len() % PUBLISH_INTERVAL == 0 {
                     task::block_on(async {
-                        let player_cid = container.send_player_directory(&self.block_sender, &local_peer_id).await;
-                        log::info!("PLAYER created, https://{}.{}", player_cid.to_string(), IPFS_GATEWAY);
+                        let (player_cid, total_size) = container.send_player_directory(&self.block_sender, &local_peer_id).await;
+                        log::info!("PLAYER created ====> https://{}.{} ({} bytes)", player_cid.to_string(), IPFS_GATEWAY, total_size);
                         self.pin_sender.send(player_cid).await;
                     });
                 }
@@ -426,8 +451,8 @@ impl VideoIngest {
         }
         loop {
             task::block_on(async {
-                let player_cid = container.send_player_directory(&self.block_sender, &local_peer_id).await;
-                log::warn!("ingest stream ended, final PLAYER is at https://{}.{}", player_cid.to_string(), IPFS_GATEWAY);
+                let (player_cid, total_size) = container.send_player_directory(&self.block_sender, &local_peer_id).await;
+                log::warn!("ingest stream ended, final PLAYER ====> https://{}.{} ({} bytes)", player_cid.to_string(), IPFS_GATEWAY, total_size);
                 self.pin_sender.send(player_cid).await;
                 task::sleep(Duration::from_secs(60)).await;
             });
