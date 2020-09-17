@@ -16,7 +16,7 @@ use libp2p::kad::record::store::{MemoryStore, MemoryStoreConfig};
 use libp2p::mdns::{Mdns, MdnsEvent};
 use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess, NetworkBehaviour};
-use m3u8_rs::playlist::{MediaPlaylist, MediaSegment};
+use m3u8_rs::playlist::{MediaPlaylist, MediaSegment, MediaPlaylistType};
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use mpeg2ts::time::ClockReference;
 use std::borrow::Cow;
@@ -252,7 +252,9 @@ impl VideoContainer {
         let index = MediaPlaylist {
             version: 3,
             media_sequence: (self.blocks.len() + 1) as i32,
-            target_duration: SEGMENT_MIN_SEC,
+            target_duration: SEGMENT_MAX_SEC,
+            independent_segments: true,
+            playlist_type: Some(MediaPlaylistType::Vod),
             segments,
             ..Default::default()
         };
