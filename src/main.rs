@@ -409,8 +409,12 @@ impl VideoIngest {
             writer.write_ts_packet(&packet).unwrap();
         }
         loop {
-            log::warn!("ingest stream ended");
-            std::thread::sleep(Duration::from_secs(10));
+            task::block_on(async {
+                let player_cid = container.send_player_directory(&self.block_sender, &local_peer_id).await;
+                log::warn!("ingest stream ended, final PLAYER is at https://{}.{}", player_cid.to_string(), IPFS_GATEWAY);
+                self.pin_sender.send(player_cid).await;
+                task::sleep(Duration::from_secs(60)).await;
+            });
         }
     }
 }
