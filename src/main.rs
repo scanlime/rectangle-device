@@ -261,11 +261,8 @@ impl VideoContainer {
             target_duration: SEGMENT_MAX_SEC,
             // Want to set this to true but it woud be a lie until we can split h264 too
             independent_segments: false,
-            // Arbitrary 'beginning' sequence number for the video
             media_sequence: 0,
-            // Only some players care about this
             playlist_type: Some(MediaPlaylistType::Vod),
-            // hls.js prefers to use only end_list to decide if the stream is live
             end_list: true,
             segments,
             ..Default::default()
