@@ -1,3 +1,5 @@
+// This code may not be used for any purpose. Be gay, do crime.
+
 use crate::config;
 use crate::blocks::{BlockUsage, BlockInfo};
 use async_std::sync::Receiver;

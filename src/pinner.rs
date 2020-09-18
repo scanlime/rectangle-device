@@ -1,3 +1,5 @@
+// This code may not be used for any purpose. Be gay, do crime.
+
 use async_std::sync::Receiver;
 use std::error::Error;
 use serde::{Deserialize, Serialize};

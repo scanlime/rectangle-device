@@ -1,3 +1,5 @@
+// This code may not be used for any purpose. Be gay, do crime.
+
 use libipld::cid::Cid;
 use libipld::Ipld;
 use libipld::raw::RawCodec;
@@ -5,13 +7,6 @@ use libipld::codec_impl::Multicodec;
 use libipld::pb::DagPbCodec;
 use libipld::multihash::{Multihash, SHA2_256};
 use std::collections::BTreeMap;
-
-pub type Block = libipld::block::Block<Multicodec, Multihash>;
-
-pub struct BlockInfo {
-    pub block: Block,
-    pub usage: BlockUsage,
-}
 
 #[derive(Debug, Ord, PartialOrd, PartialEq, Eq, Clone)]
 pub enum BlockUsage {
@@ -23,11 +18,87 @@ pub enum BlockUsage {
     VideoSegment(usize),
 }
 
-pub fn make_pb_link(cid: Cid, size: usize, name: String) -> Ipld {
+pub type Block = libipld::block::Block<Multicodec, Multihash>;
+
+pub struct BlockInfo {
+    pub block: Block,
+    pub usage: BlockUsage,
+}
+
+#[derive(Clone)]
+pub struct Link {
+    pub cid: Cid,
+    pub name: String,
+    pub size: usize,
+}
+
+pub struct DirectoryBlock {
+    pub block: Block,
+    pub total_size: usize,
+    pub links: Vec<Link>
+}
+
+impl DirectoryBlock {
+    pub fn new(links: Vec<Link>) -> DirectoryBlock {
+        let mut total_size = 0;
+        let mut ipld = vec![];
+        for link in links.clone() {
+            total_size += link.size;
+            ipld.push(make_pb_link(link));
+        }
+        let block = directory_block(ipld);
+        total_size += block.data.len();
+        DirectoryBlock { block, total_size, links }
+    }
+
+    pub fn link(&self, name: String) -> Link {
+        Link {
+            cid: self.block.cid.clone(),
+            size: self.total_size,
+            name,
+        }
+    }
+
+    pub fn use_as(self, usage: BlockUsage) -> BlockInfo {
+        BlockInfo {
+            block: self.block,
+            usage
+        }
+    }
+}
+
+pub struct RawFileBlock {
+    pub block: Block,
+}
+
+impl RawFileBlock {
+    pub fn new(data: &[u8]) -> RawFileBlock {
+        RawFileBlock {
+            block: Block::encode(RawCodec, SHA2_256, data).unwrap()
+        }
+    }
+
+    pub fn link(&self, name: String) -> Link {
+        Link {
+            cid: self.block.cid.clone(),
+            size: self.block.data.len(),
+            name,
+        }
+    }
+
+    pub fn use_as(self, usage: BlockUsage) -> BlockInfo {
+        BlockInfo {
+            block: self.block,
+            usage
+        }
+    }
+}
+
+fn make_pb_link(link: Link) -> Ipld {
     let mut pb_link = BTreeMap::<String, Ipld>::new();
-    pb_link.insert("Hash".to_string(), cid.clone().into());
-    pb_link.insert("Name".to_string(), name.into());
-    pb_link.insert("Tsize".to_string(), size.into());
+    pb_link.insert("Hash".to_string(), link.cid.into());
+    pb_link.insert("Name".to_string(), link.name.into());
+    pb_link.insert("Tsize".to_string(), link.size.into());
     pb_link.into()
 }
 
@@ -38,17 +109,13 @@ fn make_pb_node(links: Vec<Ipld>, data: Vec<u8>) -> Ipld {
     pb_node.into()
 }
 
-pub fn make_raw_block(data: &[u8]) -> Block {
-    Block::encode(RawCodec, SHA2_256, data).unwrap()
-}
-
 fn make_unixfs_directory(links: Vec<Ipld>) -> Ipld {
     const PBTAG_TYPE: u8 = 8;
     const TYPE_DIRECTORY: u8 = 1;
     make_pb_node(links, vec![PBTAG_TYPE, TYPE_DIRECTORY])
 }
 
-pub fn make_directory_block(links: Vec<Ipld>) -> Block {
+fn directory_block(links: Vec<Ipld>) -> Block {
     let ipld = make_unixfs_directory(links);
     Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap()
 }
