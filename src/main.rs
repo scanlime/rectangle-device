@@ -359,24 +359,23 @@ impl VideoIngest {
     fn run(self, args: Vec<String>, local_peer_id: &PeerId) {
         log::info!("ingest process starting, {:?}", args);
 
-        // To do: Sandbox ffmpeg. gaol is promising but we would need to
-        // pipe the stdout separately.
+        // To do: Sandbox ffmpeg. gaol is promising but we'd need to stop using stdout.
 
-        // To do: fix the segmentation, this is really the bare minimum
-        // and seeking is still bad. Take inspiration from the ffmpeg
-        // -f segment format, or even better, figure out how to use it
-        // in this context. Either trick it into writing all segments to
-        // stdout somehow, or maybe we take a more comprehensive approach
-        // and let ffmpeg write into our ram storage directly somehow.
-        // Maybe via libavformat bindings, maybe with some filesystem sandbox.
-        // Not sure how much to commit to ffmpeg at this point.
-
-        let mpegts = Command::new("ffmpeg")
+        let mut command = Command::new("ffmpeg");
+        command
             .arg("-nostats").arg("-nostdin")
             .arg("-loglevel").arg("error")
             .args(args)
             .arg("-c").arg("copy")
-            .arg("-f").arg("mpegts").arg("-")
+            .arg("-f").arg("stream_segment")
+            .arg("-segment_format").arg("mpegts")
+            .arg("-segment_wrap").arg("1")
+            .arg("-segment_time").arg(SEGMENT_MIN_SEC.to_string())
+            .arg("pipe:%d.ts");
+
+        log::info!("using command: {:?}", command);
+
+        let mpegts = command
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn().unwrap()
@@ -403,9 +402,14 @@ impl VideoIngest {
             let segment_ticks = clock_latest.map_or(0, |c| c.as_u64()) - segment_clock.or(clock_first).map_or(0, |c| c.as_u64());
             let segment_sec = (segment_ticks as f32) * (1.0 / (ClockReference::RESOLUTION as f32));
 
-            // If the 'random access indicator' flag in the adaptation field is set,
-            // treat this like a keyframe and prefer to start segments just before this packet.
-            let is_keyframe = packet.adaptation_field.as_ref().map_or(false, |a| a.random_access_indicator);
+            // To do: determining keyframes properly actually requires looking at the video
+            // packet data. At the mpeg-ts layer there's a "random access indicator" which
+            // seems to be vaguely useful but if you actually start playback there you're still
+            // missing the mpeg-ts PAT and several other things. This code need to do
+            // a much better job, but for now with ffmpeg's help the stream seems regular
+            // enough that we can safely split it just before Pid(17) containing the
+            // Service Description Table.
+            let is_keyframe = packet.header.pid.as_u16() == 17;
 
             // This is the most recent timestamp we know about as of 'packet'
             if let Some(pcr) = packet.adaptation_field.as_ref().and_then(|a| a.pcr) {
