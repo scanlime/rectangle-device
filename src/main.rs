@@ -359,6 +359,18 @@ impl VideoIngest {
     fn run(self, args: Vec<String>, local_peer_id: &PeerId) {
         log::info!("ingest process starting, {:?}", args);
 
+        // To do: Sandbox ffmpeg. gaol is promising but we would need to
+        // pipe the stdout separately.
+
+        // To do: fix the segmentation, this is really the bare minimum
+        // and seeking is still bad. Take inspiration from the ffmpeg
+        // -f segment format, or even better, figure out how to use it
+        // in this context. Either trick it into writing all segments to
+        // stdout somehow, or maybe we take a more comprehensive approach
+        // and let ffmpeg write into our ram storage directly somehow.
+        // Maybe via libavformat bindings, maybe with some filesystem sandbox.
+        // Not sure how much to commit to ffmpeg at this point.
+
         let mpegts = Command::new("ffmpeg")
             .arg("-nostats").arg("-nostdin")
             .arg("-loglevel").arg("error")
