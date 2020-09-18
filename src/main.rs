@@ -58,9 +58,9 @@ const HLS_FILENAME : &'static str = "index.m3u8";
 const HLS_DIRECTORY : &'static str = "video";
 const SEGMENT_MIN_BYTES : usize = 64*1024;
 const SEGMENT_MAX_BYTES : usize = 1024*1024;
-const SEGMENT_MIN_SEC : f32 = 1.5;
+const SEGMENT_MIN_SEC : f32 = 2.0;
 const SEGMENT_MAX_SEC : f32 = 5.0;
-const PUBLISH_INTERVAL : usize = 20;
+const PUBLISH_INTERVAL : usize = 50;
 
 type BlockType = Block<Multicodec, Multihash>;
 
