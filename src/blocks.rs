@@ -112,6 +112,7 @@ fn make_pb_node(links: Vec<Ipld>, data: Vec<u8>) -> Ipld {
 fn make_unixfs_directory(links: Vec<Ipld>) -> Ipld {
     const PBTAG_TYPE: u8 = 8;
     const TYPE_DIRECTORY: u8 = 1;
+    const TYPE_FILE: u8 = 1;
     make_pb_node(links, vec![PBTAG_TYPE, TYPE_DIRECTORY])
 }
 
