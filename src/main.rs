@@ -27,6 +27,7 @@ use std::error::Error;
 use std::io::Cursor;
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use std::thread;
 use serde::{Deserialize, Serialize};
 
 // Network dependency: public HTTPS gateway
@@ -101,7 +102,7 @@ struct P2PVideoNode {
 
 struct Pinner {
     pin_receiver: Receiver<Cid>,
-    local_peer_id: PeerId,
+    local_multiaddrs: Vec<String>
 }
 
 struct VideoContainer {
@@ -199,20 +200,7 @@ impl Pinner {
             let pin = APIPin {
                 cid: cid.to_string(),
                 name: IPFS_PINNING_NAME.to_string(),
-                origins: vec![
-                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                        router_addr = IPFS_ROUTER_ADDR_TCP,
-                        router_id = IPFS_ROUTER_ID,
-                        local_id = self.local_peer_id),
-                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                        router_addr = IPFS_ROUTER_ADDR_UDP,
-                        router_id = IPFS_ROUTER_ID,
-                        local_id = self.local_peer_id),
-                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                        router_addr = IPFS_ROUTER_ADDR_WSS,
-                        router_id = IPFS_ROUTER_ID,
-                        local_id = self.local_peer_id)
-                ]
+                origins: self.local_multiaddrs.clone()
             };
 
             let url = match &id {
@@ -256,10 +244,9 @@ impl VideoContainer {
 
         // https://tools.ietf.org/html/rfc8216
         let playlist = MediaPlaylist {
-            // Version 3 adds support for floating point durations, which we need
             version: 3,
             target_duration: SEGMENT_MAX_SEC,
-            // Want to set this to true but it woud be a lie until we can split h264 too
+            // To Do: Want to set this to true but it woud be a lie until we can split h264 too
             independent_segments: false,
             media_sequence: 0,
             playlist_type: Some(MediaPlaylistType::Vod),
@@ -703,25 +690,37 @@ impl Future for P2PVideoNode {
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rectangle_device=info")).init();
     let video_args = std::env::args().skip(1).collect();
+
     let (block_sender, block_receiver) = channel(32);
     let (pin_sender, pin_receiver) = channel(32);
+
     let node = P2PVideoNode::new(block_receiver)?;
     let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
 
     let pinner = Pinner {
         pin_receiver,
-        local_peer_id: local_peer_id.clone()
+        local_multiaddrs: vec![
+            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                router_addr = IPFS_ROUTER_ADDR_TCP, router_id = IPFS_ROUTER_ID, local_id = local_peer_id),
+            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                router_addr = IPFS_ROUTER_ADDR_UDP, router_id = IPFS_ROUTER_ID, local_id = local_peer_id),
+            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                router_addr = IPFS_ROUTER_ADDR_WSS, router_id = IPFS_ROUTER_ID, local_id = local_peer_id)
+        ]
     };
-    std::thread::spawn(move || {
+
+    thread::Builder::new().name("pinner".to_string()).spawn(move || {
         tokio::runtime::Runtime::new().unwrap().block_on(pinner.task());
-    });
+    })?;
 
-    task::spawn_blocking(move || VideoIngest {
-        block_sender,
-        pin_sender
-    }.run(video_args, &local_peer_id));
+    thread::Builder::new().name("vid-in".to_string()).spawn(move || {
+        VideoIngest {
+            block_sender,
+            pin_sender
+        }.run(video_args, &local_peer_id)
+    })?;
 
-    task::block_on(node);
+    task::Builder::new().name("p2p-node".to_string()).blocking(node);
 
     Ok(())
 }
