@@ -246,7 +246,7 @@ impl VideoContainer {
         let playlist = MediaPlaylist {
             version: 3,
             target_duration: SEGMENT_MAX_SEC,
-            // To Do: Want to set this to true but it woud be a lie until we can split h264 too
+            // To Do: Want to set this to true but it would be a lie until we can split h264 too
             independent_segments: false,
             media_sequence: 0,
             playlist_type: Some(MediaPlaylistType::Vod),
