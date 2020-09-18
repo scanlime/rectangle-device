@@ -645,7 +645,7 @@ impl P2PVideoNode {
         }
 
         let netinfo = Swarm::network_info(&mut self.swarm);
-        log::info!("ingest {} bytes, cid {} {:?} {:?}", block_size, cid_str, usage, netinfo);
+        log::info!("ingest {} bytes, cid {} {:?} ({} peers)", block_size, cid_str, usage, netinfo.num_peers);
 
         self.swarm.kad_lan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
         self.swarm.kad_wan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();

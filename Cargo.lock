@@ -2567,6 +2567,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rectangle-device"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "env_logger",
+ "futures",
+ "libipld",
+ "libp2p",
+ "libp2p-bitswap",
+ "log",
+ "m3u8-rs",
+ "mpeg2ts",
+ "rand 0.7.3",
+ "reqwest",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2648,25 +2667,6 @@ dependencies = [
  "untrusted",
  "web-sys",
  "winapi 0.3.9",
-]
-
-[[package]]
-name = "rust-ipfs-toy"
-version = "0.1.0"
-dependencies = [
- "async-std",
- "env_logger",
- "futures",
- "libipld",
- "libp2p",
- "libp2p-bitswap",
- "log",
- "m3u8-rs",
- "mpeg2ts",
- "rand 0.7.3",
- "reqwest",
- "serde",
- "tokio",
 ]
 
 [[package]]
