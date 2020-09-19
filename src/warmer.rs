@@ -1,19 +1,40 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use async_std::sync::Receiver;
+use async_std::sync::{channel, Sender, Receiver, TrySendError};
 use std::time::Duration;
 use reqwest::{Client, StatusCode};
 
-#[derive(Clone)]
-pub struct Warmer {
-    pub url_receiver: Receiver<String>,
+#[derive(Debug)]
+struct QueueItem {
+    url: String,
+    try_num: u64,
 }
 
-const POOL_SIZE: usize = 500;
-const NUM_RETRIES: usize = 100;
-const TIMEOUT_MSEC: u64 = 3000;
+#[derive(Clone)]
+pub struct Warmer {
+    sender: Sender<QueueItem>,
+    receiver: Receiver<QueueItem>,
+}
+
+const POOL_SIZE: usize = 100;
+const QUEUE_SIZE: usize = 4000;
+const TIMEOUT_MSEC: u64 = 500;
+const NUM_RETRIES: u64 = 1000;
 
 impl Warmer {
+    pub fn new() -> Warmer {
+        let (sender, receiver) = channel(QUEUE_SIZE);
+        Warmer { sender, receiver }
+    }
+
+    pub fn send(&self, url: String) {
+        match self.sender.try_send(QueueItem { url, try_num: 0 }) {
+            Ok(()) => {},
+            Err(TrySendError::Full(item)) => log::error!("queue full, dropping {:?}", item),
+            Err(TrySendError::Disconnected(item)) => log::error!("queue disconnected, dropping {:?}", item),
+        }
+    }
+
     pub async fn task(self) {
         let mut tasks = vec![];
         for pool_id in 0..POOL_SIZE {
@@ -33,25 +54,27 @@ impl Warmer {
             .build().unwrap();
 
         loop {
-            self.pool_task_poll(pool_id, &client).await;
-        }
-    }
+            let item = self.receiver.recv().await.unwrap();
+            log::trace!("[{}] head {} try {}", pool_id, item.url, item.try_num);
 
-    async fn pool_task_poll(&self, pool_id: usize, client: &Client) {
-        let url = self.url_receiver.recv().await.unwrap();
-        for try_num in 0..NUM_RETRIES {
-            log::trace!("[{}] head {} try {}", pool_id, url, try_num);
-            let result = client.head(&url).send().await;
+            let result = client.head(&item.url).send().await;
             match result.map(|r| r.status()) {
                 Ok(StatusCode::OK) => {
-                    log::info!("[{}] try# {}, {}", pool_id, try_num, url);
-                    return;
+                    log::info!("[{}] try# {}, {}", pool_id, item.try_num, item.url);
                 },
                 err => {
-                    log::trace!("[{}] {:?}", pool_id, err);
+                    let next_try = QueueItem {
+                        url: item.url,
+                        try_num: item.try_num + 1,
+                    };
+                    if next_try.try_num > NUM_RETRIES {
+                        log::error!("[{}] failed {} after {} tries", pool_id, next_try.url, item.try_num);
+                    } else {
+                        log::trace!("[{}] {:?}, retrying later", pool_id, err);
+                        self.sender.send(next_try).await;
+                    }
                 }
-            };
+            }
         }
-        log::warn!("[{}] failed {} after {} tries", pool_id, url, NUM_RETRIES);
     }
 }

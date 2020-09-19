@@ -2,7 +2,8 @@
 
 use crate::config;
 use crate::blocks::{BlockUsage, BlockInfo};
-use async_std::sync::{Sender, Receiver};
+use crate::warmer::Warmer;
+use async_std::sync::Receiver;
 use core::pin::Pin;
 use std::cmp::Ordering;
 use futures::{Future, Stream};
@@ -55,7 +56,7 @@ impl PartialEq for BlockSendKey {
 pub struct P2PVideoNode {
     gossipsub_topic: gossipsub::Topic,
     pub swarm: Swarm<P2PVideoBehaviour>,
-    url_sender: Sender<String>,
+    warmer: Warmer,
 }
 
 #[derive(NetworkBehaviour)]
@@ -196,7 +197,7 @@ fn keypair_from_openssl_rsa() -> Result<Keypair, Box<dyn Error>> {
 }
 
 impl P2PVideoNode {
-    pub fn new(block_receiver: Receiver<BlockInfo>, url_sender: Sender<String>) -> Result<P2PVideoNode, Box<dyn Error>> {
+    pub fn new(block_receiver: Receiver<BlockInfo>, warmer: Warmer) -> Result<P2PVideoNode, Box<dyn Error>> {
 
         let local_key = keypair_from_openssl_rsa()?;
         let local_peer_id = PeerId::from(local_key.public());
@@ -245,7 +246,7 @@ impl P2PVideoNode {
 
         Ok(P2PVideoNode {
             gossipsub_topic,
-            url_sender,
+            warmer,
             swarm
         })
     }
@@ -272,14 +273,8 @@ impl P2PVideoNode {
 
         self.swarm.block_store.insert(hash_bytes, block_info);
 
-        self.send_url(format!("http://{}/ipfs/{}", config::IPFS_LOCAL_GATEWAY, cid_str));
-        self.send_url(format!("http://{}/ipfs/{}", config::IPFS_GATEWAY, cid_str));
-    }
-
-    fn send_url(&self, url: String) {
-        if self.url_sender.try_send(url).is_err() {
-            log::warn!("stored cid queue overflowed");
-        }
+        self.warmer.send(format!("http://{}/ipfs/{}", config::IPFS_LOCAL_GATEWAY, cid_str));
+        self.warmer.send(format!("http://{}/ipfs/{}", config::IPFS_GATEWAY, cid_str));
     }
 }
 

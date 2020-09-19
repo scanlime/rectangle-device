@@ -21,14 +21,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let (block_sender, block_receiver) = channel(64);
     let (pin_sender, pin_receiver) = channel(128);
-    let (url_sender, url_receiver) = channel(1024);
 
-    let node = network::P2PVideoNode::new(block_receiver, url_sender)?;
+    let warmer = warmer::Warmer::new();
+    let node = network::P2PVideoNode::new(block_receiver, warmer.clone())?;
     let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
     let local_multiaddrs = config::local_multiaddrs(&local_peer_id);
 
     let ingest = ingest::VideoIngest::new(block_sender, pin_sender, local_peer_id.clone());
-    let warmer = warmer::Warmer { url_receiver };
     let pinner = pinner::Pinner { pin_receiver, local_multiaddrs };
 
     thread::Builder::new().name("warmer".to_string()).spawn(move || {
