@@ -54,17 +54,19 @@ impl MultiBlockFile {
     pub fn new(bytes: &[u8]) -> MultiBlockFile {
         let mut total_size = 0;
         let mut parts = vec![];
+        let mut sizes = vec![];
         let mut ipld = vec![];
 
         for chunk in bytes.chunks(SEGMENT_MAX_BYTES) {
             let part = RawFileBlock::new(chunk);
             let link = part.link("".to_string());
             total_size += link.size;
+            sizes.push(link.size);
             ipld.push(dag::make_pb_link(link));
             parts.push(part);
         }
 
-        let ipld = unixfs::make_file(ipld);
+        let ipld = unixfs::make_file(ipld, sizes);
         let root = Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap();
         total_size += root.data.len();
 
