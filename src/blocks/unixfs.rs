@@ -6,7 +6,7 @@ use crate::blocks::dag;
 // Hardcoded protocol buffer field tag for 'type'
 const PBTAG_TYPE: u8 = 8;
 
-// Hardcoded enum values from tjhe UnixFS protocol spec
+// Hardcoded enum values from the UnixFS protocol spec
 const TYPE_DIRECTORY: u8 = 1;
 const TYPE_FILE: u8 = 2;
 
