@@ -11,7 +11,7 @@ pub const IPFS_ROUTER_ADDR_WSS : &'static str = "/dns4/ipfs.diode.zone/tcp/443/w
 pub const IPFS_ROUTER_ADDR_TCP : &'static str = "/dns4/ipfs.diode.zone/tcp/4001";
 pub const IPFS_ROUTER_ADDR_UDP : &'static str = "/dns4/ipfs.diode.zone/udp/4001/quic";
 
-// Network dependency: IPFS pinning services API, for requesting long-term storage of ingested video
+// Optional network dependency: IPFS pinning services API, for requesting long-term storage of ingested video
 // https://ipfs.github.io/pinning-services-api-spec/
 pub const IPFS_PINNING_API : &'static str = "http://99.149.215.66:5000/api/v1";
 pub const IPFS_PINNING_NAME : &'static str = "Experimental video stream from rectangle-device";
