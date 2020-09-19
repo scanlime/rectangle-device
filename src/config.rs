@@ -1,3 +1,5 @@
+// This code may not be used for any purpose. Be gay, do crime.
+
 // Network dependency: public HTTPS gateway
 pub const IPFS_GATEWAY : &'static str = "ipfs.cf-ipfs.com";
 

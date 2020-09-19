@@ -1,5 +1,10 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
+mod dag;
+mod unixfs;
+
+pub use dag::Link;
+
 use libipld::cid::Cid;
 use libipld::Ipld;
 use libipld::raw::RawCodec;
@@ -46,7 +51,8 @@ impl DirectoryBlock {
             total_size += link.size;
             ipld.push(make_pb_link(link));
         }
-        let block = directory_block(ipld);
+        let ipld = make_unixfs_directory(links);
+        let block = Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap();
         total_size += block.data.len();
         DirectoryBlock { block, total_size, links }
     }
@@ -92,31 +98,4 @@ impl RawFileBlock {
             usage
         }
     }
-}
-
-fn make_pb_link(link: Link) -> Ipld {
-    let mut pb_link = BTreeMap::<String, Ipld>::new();
-    pb_link.insert("Hash".to_string(), link.cid.into());
-    pb_link.insert("Name".to_string(), link.name.into());
-    pb_link.insert("Tsize".to_string(), link.size.into());
-    pb_link.into()
-}
-
-fn make_pb_node(links: Vec<Ipld>, data: Vec<u8>) -> Ipld {
-    let mut pb_node = BTreeMap::<String, Ipld>::new();
-    pb_node.insert("Links".to_string(), links.into());
-    pb_node.insert("Data".to_string(), data.into());
-    pb_node.into()
-}
-
-fn make_unixfs_directory(links: Vec<Ipld>) -> Ipld {
-    const PBTAG_TYPE: u8 = 8;
-    const TYPE_DIRECTORY: u8 = 1;
-    const TYPE_FILE: u8 = 1;
-    make_pb_node(links, vec![PBTAG_TYPE, TYPE_DIRECTORY])
-}
-
-fn directory_block(links: Vec<Ipld>) -> Block {
-    let ipld = make_unixfs_directory(links);
-    Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap()
 }
