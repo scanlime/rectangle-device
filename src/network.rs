@@ -287,47 +287,45 @@ impl Future for P2PVideoNode {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        loop {
-            let mut events_to_poll = 3;
 
-            match self.swarm.blocks_to_send.iter().cloned().next() {
-                None => events_to_poll -= 1,
-                Some(send_key) => {
-                    self.swarm.blocks_to_send.remove(&send_key);
-                    if let Some(block_info) = self.swarm.block_store.get(&send_key.cid.hash().to_bytes()) {
-                        log::info!("SENDING block in response to want, {} {:?} -> {}",
-                            send_key.cid.to_string(), send_key.usage, send_key.peer_id);
-                        let peer_id = send_key.peer_id.clone();
-                        let cid = send_key.cid.clone();
-                        let data = block_info.block.data.clone();
-                        self.swarm.bitswap.send_block(&peer_id, cid, data);
-                    }
+        // At most one bitswap sent block per wakeup for now, to keep networ from getting overwhelmed
+        match self.swarm.blocks_to_send.iter().cloned().next() {
+            None => {},
+            Some(send_key) => {
+                self.swarm.blocks_to_send.remove(&send_key);
+                if let Some(block_info) = self.swarm.block_store.get(&send_key.cid.hash().to_bytes()) {
+                    log::info!("SENDING block in response to want, {} {:?} -> {}",
+                        send_key.cid.to_string(), send_key.usage, send_key.peer_id);
+                    let peer_id = send_key.peer_id.clone();
+                    let cid = send_key.cid.clone();
+                    let data = block_info.block.data.clone();
+                    self.swarm.bitswap.send_block(&peer_id, cid, data);
                 }
-            };
-
-            match Pin::new(&mut self.swarm.block_receiver).poll_next(ctx) {
-                Poll::Pending => events_to_poll -= 1,
-                Poll::Ready(None) => return Poll::Ready(()),
-                Poll::Ready(Some(block_info)) => self.store_block(block_info)
             }
+        }
 
+        // At most one stored block per wakeup for now, to keep network from getting overwhelmed
+        match Pin::new(&mut self.swarm.block_receiver).poll_next(ctx) {
+            Poll::Pending => {},
+            Poll::Ready(None) => return Poll::Ready(()),
+            Poll::Ready(Some(block_info)) => self.store_block(block_info)
+        }
+
+        // Poll network until it's fully blocked on I/O
+        loop {
             let network_event = unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
             match network_event {
-                Poll::Pending => events_to_poll -= 1,
-
+                Poll::Pending => {
+                    return Poll::Pending;
+                },
                 Poll::Ready(SwarmEvent::NewListenAddr(addr)) => {
                     let peer_id = Swarm::local_peer_id(&self.swarm).clone();
                     log::info!("listening at {}/p2p/{}", addr, peer_id);
                     self.swarm.kad_lan.add_address(&peer_id, addr);
                 },
-
                 Poll::Ready(x) => {
                     log::trace!("network event {:?}", x);
                 },
-            }
-
-            if events_to_poll == 0 {
-                return Poll::Pending;
             }
         }
     }

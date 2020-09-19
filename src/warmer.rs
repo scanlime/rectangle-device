@@ -8,9 +8,9 @@ pub struct Warmer {
     pub url_receiver: Receiver<String>,
 }
 
-const POOL_SIZE: usize = 100;
+const POOL_SIZE: usize = 1000;
 const NUM_RETRIES: usize = 20;
-const TIMEOUT_MSEC: u64 = 500;
+const TIMEOUT_MSEC: u64 = 2500;
 
 impl Warmer {
     pub async fn task(self) {
@@ -28,7 +28,7 @@ impl Warmer {
                         let result = client.head(&url).send().await;
                         match result.map(|r| r.status()) {
                             Ok(StatusCode::OK) => {
-                                log::debug!("[{}] try# {}, {}", warmer_id, try_num, url);
+                                log::info!("[{}] try# {}, {}", warmer_id, try_num, url);
                                 return;
                             },
                             err => {
