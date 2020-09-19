@@ -15,7 +15,7 @@ pub const IPFS_ROUTER_ADDR_UDP : &'static str = "/dns4/ipfs.diode.zone/udp/4001/
 // This should be ideally a machine that is well-connected and will cache our blocks for a little while.
 // Using the public cf-ipfs.com gateway here is counterproductive because they will not advertise the blocks
 // even to directly connected peers.
-pub const IPFS_WARMER_GATEWAY : &'static str = "10.0.0.8:8080";
+pub const IPFS_WARMER_GATEWAY : &'static str = "99.149.215.66:8080";
 
 // Optional network dependency: IPFS pinning services API, for requesting long-term storage of ingested video
 // https://ipfs.github.io/pinning-services-api-spec/
