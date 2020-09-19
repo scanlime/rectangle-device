@@ -9,9 +9,9 @@ pub struct Warmer {
     pub url_receiver: Receiver<String>,
 }
 
-const POOL_SIZE: usize = 1000;
-const NUM_RETRIES: usize = 20;
-const TIMEOUT_MSEC: u64 = 2500;
+const POOL_SIZE: usize = 500;
+const NUM_RETRIES: usize = 100;
+const TIMEOUT_MSEC: u64 = 3000;
 
 impl Warmer {
     pub async fn task(self) {

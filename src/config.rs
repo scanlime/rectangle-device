@@ -52,4 +52,4 @@ pub const SEGMENT_MIN_BYTES : usize = 64*1024;
 pub const SEGMENT_MAX_BYTES : usize = 1024*1024;
 pub const SEGMENT_MIN_SEC : f32 = 2.0;
 pub const SEGMENT_MAX_SEC : f32 = 5.0;
-pub const PUBLISH_INTERVAL_SEC : u64 = 60;
+pub const PUBLISH_INTERVAL_SEC : u64 = 30;
