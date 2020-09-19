@@ -6,7 +6,7 @@ use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteT
 use mpeg2ts::time::ClockReference;
 use std::io::Cursor;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use libp2p::PeerId;
 use libipld::Cid;
 use crate::config;
@@ -57,6 +57,7 @@ impl VideoIngest {
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
         let mut container = Container { blocks: vec![] };
+        let mut next_publish_at = Instant::now() + Duration::from_secs(config::PUBLISH_INTERVAL_SEC);
 
         let mut clock_latest: Option<ClockReference> = None;
         let mut clock_first: Option<ClockReference> = None;
@@ -114,13 +115,16 @@ impl VideoIngest {
                     sequence: container.blocks.len()
                 };
                 task::block_on(async {
-                    log::info!("video segment {}", segment.sequence);
+                    log::trace!("video segment {}", segment.sequence);
                     segment_file.send(&self.block_sender, BlockUsage::VideoSegment(segment.sequence)).await
                 });
 
                 // Add each block to a table of contents, which is sent less frequently
                 container.blocks.push(segment);
-                if container.blocks.len() % config::PUBLISH_INTERVAL == 0 {
+
+                let now = Instant::now();
+                if now > next_publish_at {
+                    next_publish_at = now + Duration::from_secs(config::PUBLISH_INTERVAL_SEC);
                     task::block_on(self.send_player(&container));
                 }
 
