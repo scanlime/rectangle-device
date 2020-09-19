@@ -119,7 +119,7 @@ impl VideoIngest {
                         let player = HLSPlayer::from_hls(&hls, &hls_dist, &local_peer_id);
                         let player_cid = player.directory.block.cid.clone();
 
-                        log::info!("PLAYER created ====> https://{}.{} ({} bytes)",
+                        log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
                             player_cid.to_string(),
                             config::IPFS_GATEWAY,
                             player.directory.total_size);
@@ -147,7 +147,7 @@ impl VideoIngest {
                 let player = HLSPlayer::from_hls(&hls, &hls_dist, &local_peer_id);
                 let player_cid = player.directory.block.cid.clone();
 
-                log::warn!("ingest stream ended, final PLAYER ====> https://{}.{} ({} bytes)",
+                log::warn!("ingest stream ended, final PLAYER ====> https://{}.ipfs.{} ({} bytes)",
                     player_cid.to_string(),
                     config::IPFS_GATEWAY,
                     player.directory.total_size);

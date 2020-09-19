@@ -6,6 +6,7 @@ mod container;
 mod ingest;
 mod network;
 mod pinner;
+mod warmer;
 
 use async_std::sync::channel;
 use async_std::task;
@@ -18,12 +19,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rectangle_device=info")).init();
     let video_args = std::env::args().skip(1).collect();
 
-    let (block_sender, block_receiver) = channel(32);
-    let (pin_sender, pin_receiver) = channel(32);
+    let (block_sender, block_receiver) = channel(64);
+    let (pin_sender, pin_receiver) = channel(128);
+    let (cid_sender, cid_receiver) = channel(1024);
 
-    let node = network::P2PVideoNode::new(block_receiver)?;
+    let node = network::P2PVideoNode::new(block_receiver, cid_sender)?;
     let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
 
+    let warmer = warmer::Warmer { cid_receiver };
     let pinner = pinner::Pinner {
         pin_receiver,
         local_multiaddrs: vec![
@@ -42,6 +45,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         ]
     };
 
+    thread::Builder::new().name("warmer".to_string()).spawn(move || {
+        tokio::runtime::Runtime::new().unwrap().block_on(warmer.task());
+    })?;
+
     thread::Builder::new().name("pinner".to_string()).spawn(move || {
         tokio::runtime::Runtime::new().unwrap().block_on(pinner.task());
     })?;
@@ -49,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     thread::Builder::new().name("vid-in".to_string()).spawn(move || {
         ingest::VideoIngest {
             block_sender,
-            pin_sender
+            pin_sender,
         }.run(video_args, &local_peer_id)
     })?;
 

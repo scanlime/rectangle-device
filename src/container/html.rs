@@ -14,7 +14,7 @@ fn index_html_template(hls_cid: &Cid, script_cid: &Cid, local_peer_id: &PeerId) 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=100.0, minimum-scale=1.0" />
         <link rel="icon" href="data:," />
-        <script src="https://{script:}.{gateway:}/"></script>
+        <script src="https://{script:}.ipfs.{gateway:}/"></script>
         <style>body {{ background: #000; margin: 0; }} video {{ position: absolute; width: 100%; height: 100%; left: 0; top: 0; }}</style>
     </head>
     <body>

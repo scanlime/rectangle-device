@@ -1,7 +1,7 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 // Network dependency: public HTTPS gateway
-pub const IPFS_GATEWAY : &'static str = "ipfs.cf-ipfs.com";
+pub const IPFS_GATEWAY : &'static str = "cf-ipfs.com";
 
 // Network dependency: go-ipfs relay server accessible over both TCP and WSS.
 // This is used as a bootstrap for our local IPFS node, a p2p-circuit router, and a delegate for js-ipfs browser clients.
