@@ -17,7 +17,7 @@ use std::thread;
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rectangle_device=info")).init();
-    let video_args = std::env::args().skip(1).collect();
+    let video_args : Vec<String> = std::env::args().skip(1).collect();
 
     let (block_sender, block_receiver) = channel(64);
     let (pin_sender, pin_receiver) = channel(128);
@@ -55,7 +55,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
     thread::Builder::new().name("vid-in".to_string()).spawn(move || {
-        ingest.run(video_args);
+        ingest.run(if video_args.len() == 0 {
+            config::default_args()
+        } else {
+            video_args
+        });
     })?;
 
     task::Builder::new().name("p2p-node".to_string()).blocking(node);
