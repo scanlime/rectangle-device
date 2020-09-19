@@ -1,0 +1,21 @@
+{
+  "name": "rectangle-device-player",
+  "version": "0.0.1",
+  "description": "Video player client for rectangle-device",
+  "private": true,
+  "scripts": {
+    "build": "webpack"
+  },
+  "author": "",
+  "license": "CC0",
+  "dependencies": {
+    "hls.js": "^0.14.11",
+    "hlsjs-ipfs-loader": "github:scanlime/hlsjs-ipfs-loader",
+    "ipfs": "^0.50.0"
+  },
+  "devDependencies": {
+    "webpack": "^4.44.1",
+    "webpack-bundle-analyzer": "^3.8.0",
+    "webpack-cli": "^3.3.12"
+  }
+}
