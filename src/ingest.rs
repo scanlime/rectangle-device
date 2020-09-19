@@ -16,12 +16,19 @@ use crate::container::hls::HLSContainer;
 use crate::container::html::{HLSPlayer, HLSPlayerDist};
 
 pub struct VideoIngest {
-    pub block_sender: Sender<BlockInfo>,
-    pub pin_sender: Sender<Cid>,
+    block_sender: Sender<BlockInfo>,
+    pin_sender: Sender<Cid>,
+    hls_dist: HLSPlayerDist,
+    local_peer_id: PeerId,
 }
 
 impl VideoIngest {
-    pub fn run(self, args: Vec<String>, local_peer_id: &PeerId) {
+    pub fn new(block_sender: Sender<BlockInfo>, pin_sender: Sender<Cid>, local_peer_id: PeerId) -> VideoIngest {
+        let hls_dist = HLSPlayerDist::new();
+        VideoIngest { block_sender, pin_sender, hls_dist, local_peer_id }
+    }
+
+    pub fn run(self, args: Vec<String>) {
         log::info!("ingest process starting, {:?}", args);
 
         // To do: Sandbox ffmpeg. gaol is promising but we'd need to stop using stdout.
@@ -46,20 +53,20 @@ impl VideoIngest {
             .spawn().unwrap()
             .stdout.take().unwrap();
 
-        // Initialize files the HTML player uses which don't change
-        let hls_dist = HLSPlayerDist::new();
-        task::block_on(async {
-            hls_dist.clone().send(&self.block_sender).await;
-        });
-
         let mut reader = TsPacketReader::new(mpegts);
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
         let mut container = Container { blocks: vec![] };
+
         let mut clock_latest: Option<ClockReference> = None;
         let mut clock_first: Option<ClockReference> = None;
         let mut segment_clock: Option<ClockReference> = None;
         let mut program_association_table: Option<TsPacket> = None;
+
+        // Make sure the receiver has a copy of our dependency bundle.
+        task::block_on(async {
+            self.hls_dist.clone().send(&self.block_sender).await;
+        });
 
         while let Some(packet) = reader.read_ts_packet().unwrap() {
 
@@ -107,27 +114,14 @@ impl VideoIngest {
                     sequence: container.blocks.len()
                 };
                 task::block_on(async {
-                    segment_file.send(&self.block_sender,
-                        BlockUsage::VideoSegment(segment.sequence)).await
+                    log::info!("video segment {}", segment.sequence);
+                    segment_file.send(&self.block_sender, BlockUsage::VideoSegment(segment.sequence)).await
                 });
 
                 // Add each block to a table of contents, which is sent less frequently
                 container.blocks.push(segment);
                 if container.blocks.len() % config::PUBLISH_INTERVAL == 0 {
-                    task::block_on(async {
-                        let hls = HLSContainer::new(&container);
-                        let player = HLSPlayer::from_hls(&hls, &hls_dist, &local_peer_id);
-                        let player_cid = player.directory.block.cid.clone();
-
-                        log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
-                            player_cid.to_string(),
-                            config::IPFS_GATEWAY,
-                            player.directory.total_size);
-
-                        hls.send(&self.block_sender).await;
-                        player.send(&self.block_sender).await;
-                        self.pin_sender.send(player_cid).await;
-                    });
+                    task::block_on(self.send_player(&container));
                 }
 
                 // Each segment starts with a PAT so the other packets can be identified
@@ -143,21 +137,25 @@ impl VideoIngest {
         }
         loop {
             task::block_on(async {
-                let hls = HLSContainer::new(&container);
-                let player = HLSPlayer::from_hls(&hls, &hls_dist, &local_peer_id);
-                let player_cid = player.directory.block.cid.clone();
-
-                log::warn!("ingest stream ended, final PLAYER ====> https://{}.ipfs.{} ({} bytes)",
-                    player_cid.to_string(),
-                    config::IPFS_GATEWAY,
-                    player.directory.total_size);
-
-                hls.send(&self.block_sender).await;
-                player.send(&self.block_sender).await;
-                self.pin_sender.send(player_cid).await;
-
+                log::warn!("ingest stream ended, final player");
+                self.send_player(&container).await;
                 task::sleep(Duration::from_secs(60)).await;
             });
         }
+    }
+
+    async fn send_player(&self, container: &Container) {
+        let hls = HLSContainer::new(container);
+        let player = HLSPlayer::from_hls(&hls, &self.hls_dist, &self.local_peer_id);
+        let player_cid = player.directory.block.cid.clone();
+
+        log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
+            player_cid.to_string(),
+            config::IPFS_GATEWAY,
+            player.directory.total_size);
+
+        hls.send(&self.block_sender).await;
+        player.send(&self.block_sender).await;
+        self.pin_sender.send(player_cid).await;
     }
 }

@@ -265,7 +265,7 @@ impl P2PVideoNode {
         }
 
         log::debug!("{:?}", Swarm::network_info(&mut self.swarm));
-        log::info!("ingest {:7} bytes, {} {:?}", block_size, cid_str, usage);
+        log::info!("stored {:7} bytes, {} {:?}", block_size, cid_str, usage);
 
         self.swarm.kad_lan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
         self.swarm.kad_wan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();

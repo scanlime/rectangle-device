@@ -26,6 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let node = network::P2PVideoNode::new(block_receiver, url_sender)?;
     let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
 
+    let ingest = ingest::VideoIngest::new(block_sender, pin_sender, local_peer_id.clone());
     let warmer = warmer::Warmer { url_receiver };
     let pinner = pinner::Pinner {
         pin_receiver,
@@ -54,10 +55,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
     thread::Builder::new().name("vid-in".to_string()).spawn(move || {
-        ingest::VideoIngest {
-            block_sender,
-            pin_sender,
-        }.run(video_args, &local_peer_id)
+        ingest.run(video_args);
     })?;
 
     task::Builder::new().name("p2p-node".to_string()).blocking(node);
