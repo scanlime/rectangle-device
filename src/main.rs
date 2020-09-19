@@ -25,26 +25,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let node = network::P2PVideoNode::new(block_receiver, url_sender)?;
     let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
+    let local_multiaddrs = config::local_multiaddrs(&local_peer_id);
 
     let ingest = ingest::VideoIngest::new(block_sender, pin_sender, local_peer_id.clone());
     let warmer = warmer::Warmer { url_receiver };
-    let pinner = pinner::Pinner {
-        pin_receiver,
-        local_multiaddrs: vec![
-            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                router_addr = config::IPFS_ROUTER_ADDR_TCP,
-                router_id = config::IPFS_ROUTER_ID,
-                local_id = local_peer_id),
-            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                router_addr = config::IPFS_ROUTER_ADDR_UDP,
-                router_id = config::IPFS_ROUTER_ID,
-                local_id = local_peer_id),
-            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                router_addr = config::IPFS_ROUTER_ADDR_WSS,
-                router_id = config::IPFS_ROUTER_ID,
-                local_id = local_peer_id)
-        ]
-    };
+    let pinner = pinner::Pinner { pin_receiver, local_multiaddrs };
 
     thread::Builder::new().name("warmer".to_string()).spawn(move || {
         tokio::runtime::Runtime::new().unwrap().block_on(warmer.task());

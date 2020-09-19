@@ -1,5 +1,7 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
+use libp2p::PeerId;
+
 // Input, as a partial ffmpeg command line. Note that filenames here are parsed according to
 // libavformat's protocol rules. This can be overridden by giving a command line.
 pub fn default_args() -> Vec<String> {
@@ -16,6 +18,23 @@ pub const IPFS_ROUTER_ID : &'static str = "QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDT
 pub const IPFS_ROUTER_ADDR_WSS : &'static str = "/dns4/ipfs.diode.zone/tcp/443/wss";
 pub const IPFS_ROUTER_ADDR_TCP : &'static str = "/dns4/ipfs.diode.zone/tcp/4001";
 pub const IPFS_ROUTER_ADDR_UDP : &'static str = "/dns4/ipfs.diode.zone/udp/4001/quic";
+
+pub fn local_multiaddrs(local_peer_id: &PeerId) -> Vec<String> {
+    vec![
+        format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+            router_addr = IPFS_ROUTER_ADDR_TCP,
+            router_id = IPFS_ROUTER_ID,
+            local_id = local_peer_id),
+        format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+            router_addr = IPFS_ROUTER_ADDR_UDP,
+            router_id = IPFS_ROUTER_ID,
+            local_id = local_peer_id),
+        format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+            router_addr = IPFS_ROUTER_ADDR_WSS,
+            router_id = IPFS_ROUTER_ID,
+            local_id = local_peer_id)
+    ]
+}
 
 // Optional network dependency: additional local IPFS gateway to use for the warmer pool
 pub const IPFS_LOCAL_GATEWAY : &'static str = "99.149.215.66:8080";
