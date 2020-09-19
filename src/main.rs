@@ -1,13 +1,6 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-mod blocks;
-mod config;
-mod container;
-mod ingest;
-mod network;
-mod pinner;
-mod warmer;
-
+use rectangle_device::{config, ingest, network, pinner, warmer};
 use async_std::sync::channel;
 use async_std::task;
 use env_logger::Env;
