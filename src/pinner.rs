@@ -54,7 +54,7 @@ impl Pinner {
 
             id = match result {
                 Err(err) => {
-                    log::error!("pinning api error, {}", err);
+                    log::warn!("pinning api error, {}", err);
                     None
                 },
                 Ok(new_id) => Some(new_id),
