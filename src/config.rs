@@ -11,6 +11,12 @@ pub const IPFS_ROUTER_ADDR_WSS : &'static str = "/dns4/ipfs.diode.zone/tcp/443/w
 pub const IPFS_ROUTER_ADDR_TCP : &'static str = "/dns4/ipfs.diode.zone/tcp/4001";
 pub const IPFS_ROUTER_ADDR_UDP : &'static str = "/dns4/ipfs.diode.zone/udp/4001/quic";
 
+// Optional network dependency: IPFS gateway to use for the warmer pool.
+// This should be ideally a machine that is well-connected and will cache our blocks for a little while.
+// Using the public cf-ipfs.com gateway here is counterproductive because they will not advertise the blocks
+// even to directly connected peers.
+pub const IPFS_WARMER_GATEWAY : &'static str = "10.0.0.8:8080";
+
 // Optional network dependency: IPFS pinning services API, for requesting long-term storage of ingested video
 // https://ipfs.github.io/pinning-services-api-spec/
 pub const IPFS_PINNING_API : &'static str = "http://99.149.215.66:5000/api/v1";

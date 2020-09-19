@@ -22,7 +22,7 @@ impl Warmer {
                 loop {
                     let cid = cid_receiver.recv().await.unwrap();
                     let cid_str = cid.to_string();
-                    let url = format!("https://{}/ipfs/{}", config::IPFS_GATEWAY, cid_str);
+                    let url = format!("http://{}/ipfs/{}", config::IPFS_WARMER_GATEWAY, cid_str);
                     for try_num in 0..NUM_RETRIES {
                         log::trace!("[{}] head {} try {}", warmer_id, url, try_num);
                         let result = client.head(&url).send().await;
