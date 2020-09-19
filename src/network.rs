@@ -288,10 +288,10 @@ impl Future for P2PVideoNode {
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         loop {
-            let mut event_pending_counter = 3;
+            let mut events_to_poll = 3;
 
             match self.swarm.blocks_to_send.iter().cloned().next() {
-                None => event_pending_counter -= 1,
+                None => events_to_poll -= 1,
                 Some(send_key) => {
                     self.swarm.blocks_to_send.remove(&send_key);
                     if let Some(block_info) = self.swarm.block_store.get(&send_key.cid.hash().to_bytes()) {
@@ -306,14 +306,14 @@ impl Future for P2PVideoNode {
             };
 
             match Pin::new(&mut self.swarm.block_receiver).poll_next(ctx) {
-                Poll::Pending => event_pending_counter -= 1,
+                Poll::Pending => events_to_poll -= 1,
                 Poll::Ready(None) => return Poll::Ready(()),
                 Poll::Ready(Some(block_info)) => self.store_block(block_info)
             }
 
             let network_event = unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
             match network_event {
-                Poll::Pending => event_pending_counter -= 1,
+                Poll::Pending => events_to_poll -= 1,
 
                 Poll::Ready(SwarmEvent::NewListenAddr(addr)) => {
                     let peer_id = Swarm::local_peer_id(&self.swarm).clone();
@@ -326,7 +326,7 @@ impl Future for P2PVideoNode {
                 },
             }
 
-            if event_pending_counter == 0 {
+            if events_to_poll == 0 {
                 return Poll::Pending;
             }
         }
