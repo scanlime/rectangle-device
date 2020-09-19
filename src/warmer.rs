@@ -9,7 +9,7 @@ pub struct Warmer {
     pub cid_receiver: Receiver<Cid>,
 }
 
-const POOL_SIZE: usize = 80;
+const POOL_SIZE: usize = 100;
 const NUM_RETRIES: usize = 10;
 
 impl Warmer {
