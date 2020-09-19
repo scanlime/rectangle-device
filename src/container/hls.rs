@@ -1,11 +1,9 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use crate::config;
-use crate::container::media::{Segment, Container};
+use crate::container::media::Container;
 use crate::blocks::{BlockInfo, BlockUsage, DirectoryBlock, Link, RawFileBlock};
 use m3u8_rs::playlist::{MediaPlaylist, MediaSegment, MediaPlaylistType};
-use libipld::cid::Cid;
-use libp2p::PeerId;
 use async_std::sync::Sender;
 
 pub struct HLSContainer {

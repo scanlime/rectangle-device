@@ -1,13 +1,14 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use libipld::cid::Cid;
 use libipld::Ipld;
 use crate::blocks::dag;
 
+// Hardcoded protocol buffer field tag for 'type'
 const PBTAG_TYPE: u8 = 8;
 
-const TYPE_DIRECTORY: u8 = 2;
-const TYPE_FILE: u8 = 1;
+// Hardcoded enum values from tjhe UnixFS protocol spec
+const TYPE_DIRECTORY: u8 = 1;
+const TYPE_FILE: u8 = 2;
 
 pub fn make_directory(links: Vec<Ipld>) -> Ipld {
     // Minimum viable UnixFS directory node.

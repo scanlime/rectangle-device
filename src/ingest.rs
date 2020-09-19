@@ -11,7 +11,9 @@ use libp2p::PeerId;
 use libipld::Cid;
 use crate::config;
 use crate::blocks::{BlockUsage, BlockInfo, RawFileBlock};
-use crate::container::{Container, HLSContainer, HLSPlayer, Segment};
+use crate::container::media::{Segment, Container};
+use crate::container::hls::HLSContainer;
+use crate::container::html::HLSPlayer;
 
 pub struct VideoIngest {
     pub block_sender: Sender<BlockInfo>,

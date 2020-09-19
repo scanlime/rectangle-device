@@ -4,7 +4,7 @@ use libipld::cid::Cid;
 use libipld::Ipld;
 use std::collections::BTreeMap;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Link {
     pub cid: Cid,
     pub name: String,

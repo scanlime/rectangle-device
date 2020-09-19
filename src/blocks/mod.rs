@@ -5,13 +5,10 @@ mod unixfs;
 
 pub use dag::Link;
 
-use libipld::cid::Cid;
-use libipld::Ipld;
 use libipld::raw::RawCodec;
 use libipld::codec_impl::Multicodec;
 use libipld::pb::DagPbCodec;
 use libipld::multihash::{Multihash, SHA2_256};
-use std::collections::BTreeMap;
 
 #[derive(Debug, Ord, PartialOrd, PartialEq, Eq, Clone)]
 pub enum BlockUsage {
@@ -30,13 +27,6 @@ pub struct BlockInfo {
     pub usage: BlockUsage,
 }
 
-#[derive(Clone)]
-pub struct Link {
-    pub cid: Cid,
-    pub name: String,
-    pub size: usize,
-}
-
 pub struct DirectoryBlock {
     pub block: Block,
     pub total_size: usize,
@@ -49,9 +39,9 @@ impl DirectoryBlock {
         let mut ipld = vec![];
         for link in links.clone() {
             total_size += link.size;
-            ipld.push(make_pb_link(link));
+            ipld.push(dag::make_pb_link(link));
         }
-        let ipld = make_unixfs_directory(links);
+        let ipld = unixfs::make_directory(ipld);
         let block = Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap();
         total_size += block.data.len();
         DirectoryBlock { block, total_size, links }
