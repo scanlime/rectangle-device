@@ -9,11 +9,14 @@ use libipld::raw::RawCodec;
 use libipld::codec_impl::Multicodec;
 use libipld::pb::DagPbCodec;
 use libipld::multihash::{Multihash, SHA2_256};
+use async_std::sync::Sender;
+use crate::config::SEGMENT_MAX_BYTES;
 
 #[derive(Debug, Ord, PartialOrd, PartialEq, Eq, Clone)]
 pub enum BlockUsage {
     // We try to send blocks in the same order listed here
     PlayerDirectory(usize),
+    PlayerScript,
     Player(usize),
     VideoDirectory(usize),
     Playlist(usize),
@@ -22,15 +25,72 @@ pub enum BlockUsage {
 
 pub type Block = libipld::block::Block<Multicodec, Multihash>;
 
+#[derive(Clone)]
 pub struct BlockInfo {
     pub block: Block,
     pub usage: BlockUsage,
 }
 
+#[derive(Clone)]
+pub struct MultiBlockFile {
+    pub root: Block,
+    pub total_size: usize,
+    pub parts: Vec<RawFileBlock>,
+}
+
+#[derive(Clone)]
+pub struct RawFileBlock {
+    pub block: Block,
+}
+
+#[derive(Clone)]
 pub struct DirectoryBlock {
     pub block: Block,
     pub total_size: usize,
     pub links: Vec<Link>
+}
+
+impl MultiBlockFile {
+    pub fn new(bytes: &[u8]) -> MultiBlockFile {
+        let mut total_size = 0;
+        let mut parts = vec![];
+        let mut ipld = vec![];
+
+        for chunk in bytes.chunks(SEGMENT_MAX_BYTES) {
+            let part = RawFileBlock::new(chunk);
+            let link = part.link("".to_string());
+            total_size += link.size;
+            ipld.push(dag::make_pb_link(link));
+            parts.push(part);
+        }
+
+        let ipld = unixfs::make_file(ipld);
+        let root = Block::encode(DagPbCodec, SHA2_256, &ipld).unwrap();
+        total_size += root.data.len();
+
+        MultiBlockFile { root, total_size, parts }
+    }
+
+    pub fn link(&self, name: String) -> Link {
+        Link {
+            cid: self.root.cid.clone(),
+            size: self.total_size,
+            name,
+        }
+    }
+
+    pub async fn send(self, sender: &Sender<BlockInfo>, usage: BlockUsage) {
+        sender.send(BlockInfo {
+            block: self.root,
+            usage: usage.clone()
+        }).await;
+        for part in self.parts {
+            sender.send(BlockInfo {
+                block: part.block,
+                usage: usage.clone()
+            }).await;
+        }
+    }
 }
 
 impl DirectoryBlock {
@@ -55,16 +115,9 @@ impl DirectoryBlock {
         }
     }
 
-    pub fn use_as(self, usage: BlockUsage) -> BlockInfo {
-        BlockInfo {
-            block: self.block,
-            usage
-        }
+    pub async fn send(self, sender: &Sender<BlockInfo>, usage: BlockUsage) {
+        sender.send(BlockInfo { block: self.block, usage }).await;
     }
-}
-
-pub struct RawFileBlock {
-    pub block: Block,
 }
 
 impl RawFileBlock {
@@ -82,10 +135,7 @@ impl RawFileBlock {
         }
     }
 
-    pub fn use_as(self, usage: BlockUsage) -> BlockInfo {
-        BlockInfo {
-            block: self.block,
-            usage
-        }
+    pub async fn send(self, sender: &Sender<BlockInfo>, usage: BlockUsage) {
+        sender.send(BlockInfo { block: self.block, usage }).await;
     }
 }

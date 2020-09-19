@@ -13,7 +13,7 @@ use crate::config;
 use crate::blocks::{BlockUsage, BlockInfo, RawFileBlock};
 use crate::container::media::{Segment, Container};
 use crate::container::hls::HLSContainer;
-use crate::container::html::HLSPlayer;
+use crate::container::html::{HLSPlayer, HLSPlayerDist};
 
 pub struct VideoIngest {
     pub block_sender: Sender<BlockInfo>,
@@ -45,6 +45,12 @@ impl VideoIngest {
             .stderr(Stdio::inherit())
             .spawn().unwrap()
             .stdout.take().unwrap();
+
+        // Initialize files the HTML player uses which don't change
+        let hls_dist = HLSPlayerDist::new();
+        task::block_on(async {
+            hls_dist.clone().send(&self.block_sender).await;
+        });
 
         let mut reader = TsPacketReader::new(mpegts);
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
@@ -100,15 +106,17 @@ impl VideoIngest {
                     duration: segment_sec,
                     sequence: container.blocks.len()
                 };
-                let usage = BlockUsage::VideoSegment(segment.sequence);
-                task::block_on(self.block_sender.send(segment_file.use_as(usage)));
+                task::block_on(async {
+                    segment_file.send(&self.block_sender,
+                        BlockUsage::VideoSegment(segment.sequence)).await
+                });
 
                 // Add each block to a table of contents, which is sent less frequently
                 container.blocks.push(segment);
                 if container.blocks.len() % config::PUBLISH_INTERVAL == 0 {
                     task::block_on(async {
                         let hls = HLSContainer::new(&container);
-                        let player = HLSPlayer::from_hls(&hls, &local_peer_id);
+                        let player = HLSPlayer::from_hls(&hls, &hls_dist, &local_peer_id);
                         let player_cid = player.directory.block.cid.clone();
 
                         log::info!("PLAYER created ====> https://{}.{} ({} bytes)",
@@ -136,7 +144,7 @@ impl VideoIngest {
         loop {
             task::block_on(async {
                 let hls = HLSContainer::new(&container);
-                let player = HLSPlayer::from_hls(&hls, &local_peer_id);
+                let player = HLSPlayer::from_hls(&hls, &hls_dist, &local_peer_id);
                 let player_cid = player.directory.block.cid.clone();
 
                 log::warn!("ingest stream ended, final PLAYER ====> https://{}.{} ({} bytes)",

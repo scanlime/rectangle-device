@@ -60,7 +60,7 @@ impl HLSContainer {
     }
 
     pub async fn send(self, sender: &Sender<BlockInfo>) {
-        sender.send(self.playlist.use_as(BlockUsage::Playlist(self.sequence))).await;
-        sender.send(self.directory.use_as(BlockUsage::VideoDirectory(self.sequence))).await;
+        self.playlist.send(sender, BlockUsage::Playlist(self.sequence)).await;
+        self.directory.send(sender, BlockUsage::VideoDirectory(self.sequence)).await;
     }
 }

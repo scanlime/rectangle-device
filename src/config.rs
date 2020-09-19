@@ -3,14 +3,6 @@
 // Network dependency: public HTTPS gateway
 pub const IPFS_GATEWAY : &'static str = "ipfs.cf-ipfs.com";
 
-// Network dependency: hls player bundle pinned on IPFS.
-// This could be served anywhere it's convenient. This CID is included in the final video bundle,
-// so it will be automatically replicated by the pinning service.
-// https://github.com/scanlime/hls-ipfs-player
-pub const IPFS_PLAYER_CID : &'static str = "bafybeihjynl6i7ee3eimzuhy2vzm72utuwdiyzfkvhyiadwtl6mtgqcbzq";
-pub const IPFS_PLAYER_NAME : &'static str = "hls-ipfs-player.js";
-pub const IPFS_PLAYER_SIZE : usize = 2053462;
-
 // Network dependency: go-ipfs relay server accessible over both TCP and WSS.
 // This is used as a bootstrap for our local IPFS node, a p2p-circuit router, and a delegate for js-ipfs browser clients.
 // In a production environment this could be a public or private machine with bandwidth but no storage
@@ -26,6 +18,7 @@ pub const IPFS_PINNING_NAME : &'static str = "Experimental video stream from rec
 
 // Settings
 pub const HLS_FILENAME : &'static str = "index.m3u8";
+pub const JS_FILENAME : &'static str = "bundle.js";
 pub const HLS_DIRECTORY : &'static str = "video";
 pub const SEGMENT_MIN_BYTES : usize = 64*1024;
 pub const SEGMENT_MAX_BYTES : usize = 1024*1024;

@@ -21,5 +21,5 @@ pub fn make_file(links: Vec<Ipld>) -> Ipld {
     // Leaving out lots of optional fields, including the duplicate block list which
     // go-ipfs still writes here but doesn't actually need. (It uses the one in the
     // DAG node for seeking now, not this one.)
-    dag::make_pb_node(links, vec![PBTAG_TYPE, TYPE_DIRECTORY])
+    dag::make_pb_node(links, vec![PBTAG_TYPE, TYPE_FILE])
 }
