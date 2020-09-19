@@ -36,7 +36,7 @@ impl Warmer {
                             }
                         };
                     }
-                    log::error!("[{}] failed {} after {} tries", warmer_id, url, NUM_RETRIES);
+                    log::warn!("[{}] failed {} after {} tries", warmer_id, url, NUM_RETRIES);
                 }
             }));
         }
