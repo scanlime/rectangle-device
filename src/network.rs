@@ -55,7 +55,7 @@ impl PartialEq for BlockSendKey {
 pub struct P2PVideoNode {
     gossipsub_topic: gossipsub::Topic,
     pub swarm: Swarm<P2PVideoBehaviour>,
-    cid_sender: Sender<Cid>,
+    url_sender: Sender<String>,
 }
 
 #[derive(NetworkBehaviour)]
@@ -196,7 +196,7 @@ fn keypair_from_openssl_rsa() -> Result<Keypair, Box<dyn Error>> {
 }
 
 impl P2PVideoNode {
-    pub fn new(block_receiver: Receiver<BlockInfo>, cid_sender: Sender<Cid>) -> Result<P2PVideoNode, Box<dyn Error>> {
+    pub fn new(block_receiver: Receiver<BlockInfo>, url_sender: Sender<String>) -> Result<P2PVideoNode, Box<dyn Error>> {
 
         let local_key = keypair_from_openssl_rsa()?;
         let local_peer_id = PeerId::from(local_key.public());
@@ -245,7 +245,7 @@ impl P2PVideoNode {
 
         Ok(P2PVideoNode {
             gossipsub_topic,
-            cid_sender,
+            url_sender,
             swarm
         })
     }
@@ -253,7 +253,6 @@ impl P2PVideoNode {
     fn store_block(&mut self, block_info: BlockInfo) {
         let usage = &block_info.usage;
         let block_size = block_info.block.data.len();
-        let cid_copy = block_info.block.cid.clone();
         let cid_str = block_info.block.cid.to_string();
         let cid_bytes = block_info.block.cid.to_bytes();
         let hash_bytes = block_info.block.cid.hash().to_bytes();
@@ -273,7 +272,12 @@ impl P2PVideoNode {
 
         self.swarm.block_store.insert(hash_bytes, block_info);
 
-        if self.cid_sender.try_send(cid_copy).is_err() {
+        self.send_url(format!("http://{}/ipfs/{}", config::IPFS_LOCAL_GATEWAY, cid_str));
+        self.send_url(format!("http://{}/ipfs/{}", config::IPFS_GATEWAY, cid_str));
+    }
+
+    fn send_url(&self, url: String) {
+        if self.url_sender.try_send(url).is_err() {
             log::warn!("stored cid queue overflowed");
         }
     }

@@ -21,12 +21,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let (block_sender, block_receiver) = channel(64);
     let (pin_sender, pin_receiver) = channel(128);
-    let (cid_sender, cid_receiver) = channel(1024);
+    let (url_sender, url_receiver) = channel(1024);
 
-    let node = network::P2PVideoNode::new(block_receiver, cid_sender)?;
+    let node = network::P2PVideoNode::new(block_receiver, url_sender)?;
     let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
 
-    let warmer = warmer::Warmer { cid_receiver };
+    let warmer = warmer::Warmer { url_receiver };
     let pinner = pinner::Pinner {
         pin_receiver,
         local_multiaddrs: vec![
