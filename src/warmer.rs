@@ -16,9 +16,9 @@ pub struct Warmer {
     receiver: Receiver<QueueItem>,
 }
 
-const POOL_SIZE: usize = 100;
-const QUEUE_SIZE: usize = 4000;
-const TIMEOUT_MSEC: u64 = 500;
+const POOL_SIZE: usize = 10;
+const QUEUE_SIZE: usize = 100000;
+const TIMEOUT_MSEC: u64 = 200;
 const NUM_RETRIES: u64 = 1000;
 
 impl Warmer {
