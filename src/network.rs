@@ -264,8 +264,8 @@ impl P2PVideoNode {
             Err(err) => log::warn!("couldn't publish, {:?}", err)
         }
 
-        let netinfo = Swarm::network_info(&mut self.swarm);
-        log::info!("ingest {} bytes, cid {} {:?} ({} peers)", block_size, cid_str, usage, netinfo.num_peers);
+        log::debug!("{:?}", Swarm::network_info(&mut self.swarm));
+        log::info!("ingest {:6} bytes, {} {:?}", block_size, cid_str, usage);
 
         self.swarm.kad_lan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
         self.swarm.kad_wan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
