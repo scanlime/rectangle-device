@@ -1,6 +1,7 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use async_std::sync::Receiver;
+use std::time::Duration;
 use reqwest::{Client, StatusCode};
 
 pub struct Warmer {
@@ -8,14 +9,17 @@ pub struct Warmer {
 }
 
 const POOL_SIZE: usize = 100;
-const NUM_RETRIES: usize = 10;
+const NUM_RETRIES: usize = 20;
+const TIMEOUT_MSEC: u64 = 500;
 
 impl Warmer {
     pub async fn task(self) {
         let mut tasks = vec![];
         for warmer_id in 0..POOL_SIZE {
             let url_receiver = self.url_receiver.clone();
-            let client = Client::new();
+            let client = Client::builder()
+                .timeout(Duration::from_millis(TIMEOUT_MSEC))
+                .build().unwrap();
             tasks.push(tokio::spawn(async move {
                 loop {
                     let url = url_receiver.recv().await.unwrap();
