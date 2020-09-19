@@ -1,6 +1,12 @@
 rectangle device
 ================
 
+External dependencies:
+- ffmpeg
+- openssl
+- yarn
+- rust
+
 This is an experimental live + vod video server that integrates with IPFS for long-term distributed storage.
 
 This is a proof of concept for streaming video ingest in a format that could be quickly shared via IPFS while the stream is still ongoing.
