@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     {
         const delegates = video.dataset.ipfsDelegates;
         if (delegates) {
-	    Array.prototype.push.apply(options.config.Addresses.Delegates, delegates.split(' '));
+            Array.prototype.push.apply(options.config.Addresses.Delegates, delegates.split(' '));
         }
 
         const bootstrap = video.dataset.ipfsBootstrap;
@@ -43,18 +43,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (src) {
             const path = src.split('/');
 
-	    // https://github.com/video-dev/hls.js/blob/master/docs/API.md
+            // https://github.com/video-dev/hls.js/blob/master/docs/API.md
             const hls = new Hls({
                 debug: true,
-		enableWorker: false,
-		manifestLoadingMaxRetry: 10,
-		startLevel: -1,
+                enableWorker: false,
+                manifestLoadingMaxRetry: 10,
+                startLevel: -1,
                 testBandwidth: false,
                 capLevelToPlayerSize: true,
                 loader: HlsjsIpfsLoader,
-		ipfs: node,
-		ipfsHash: path[0]
-	    });
+                ipfs: node,
+                ipfsHash: path[0]
+            });
 
             hls.config.ipfs = node;
             hls.config.ipfsHash = path[0];
@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } catch (e) {
                     console.error(e);
                 }
-	    });
-	}
+            });
+        }
     }
 });
