@@ -1,6 +1,5 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-/*
 use async_std::stream::StreamExt;
 use async_std::sync::{Sender, channel};
 use async_std::os::unix::net::UnixListener;
@@ -26,11 +25,25 @@ use crate::sandbox::types::{ImageDigest, SandboxError};
 use std::process::{Command, Stdio};
 use std::error::Error;
 
-const TEMP_PREFIX : &'static str = "rectangle-device.";
-const SOCKET_MOUNT : &'static str = "/var/run/rectangle-device";
-*/
+const TEMP_PREFIX : &'static str = "rectdev.";
+const SOCKET_MOUNT : &'static str = "/rectdev";
+
+pub struct SocketPool {
+
+}
+
+struct PoolItem {
+    host_path: 
+}
+
+
+impl SocketPool {
+    pub fn push(&mut self, name: &str) ->
+    }
+}
 
 /*
+
 
 struct SocketRing {
     dir: TempDir,

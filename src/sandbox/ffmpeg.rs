@@ -6,44 +6,81 @@ use crate::config;
 use crate::sandbox::runtime;
 use crate::sandbox::types::ImageDigest;
 
-pub fn run(args: Vec<String>) -> Result<(), Box<dyn Error>> {
+pub fn default_image() -> ImageDigest {
+    ImageDigest::parse(config::FFMPEG_CONTAINER_NAME, config::FFMPEG_CONTAINER_HASH).unwrap()
+}
 
-    let image = ImageDigest::parse(config::FFMPEG_CONTAINER_NAME, config::FFMPEG_CONTAINER_HASH)?;
+pub struct TranscodeConfig {
+    pub image: ImageDigest,
+    pub args: Vec<String>,
+    pub allow_networking: bool,
+    pub segment_time: f32,
+}
 
-    if !runtime::is_downloaded(&image)? {
-        runtime::download(&image)?;
+pub fn transcode(tc: TranscodeConfig) -> Result<SocketPool, Box<dyn Error>> {
+
+    if !runtime::is_downloaded(&tc.image)? {
+        runtime::download(&tc.image)?;
     }
 
+    // Output is through a small pool of per-segment unix domain sockets mapped into the container
+    let output = SocketPool::new(3);
+
+    // Be specific about sandbox options
     let mut command = runtime::command();
     command
         .arg("run")
-        .arg("-a").arg("stdout")
-        .arg("-a").arg("stderr")
-        .arg("--net=slirp4netns")
-        .arg("--dns-search=.")
+        .arg("--attach=stdout")
+        .arg("--attach=stderr")
         .arg("--env-host=false")
         .arg("--read-only")
         .arg("--restart=no")
         .arg("--detach=false")
-        .arg("--privileged=false")
-        //.args(socket_ring.mount_args.clone())
-        .arg(image.digest.as_str())
-        .args(args)
-        .arg("-nostats").arg("-nostdin")
+        .arg("--privileged=false");
+
+    // If we are intentionally ingesting data from the network, this will use slirp (a usermode
+    // tcp/ip emulator) to perform network access from usermode. Access to localhost is restricted,
+    // but any other hosts are allowed. If networking is off, the sandbox has no network at all.
+
+    if tc.allow_networking {
+        command
+            .arg("--net=slirp4netns")
+            .arg("--dns-search=.");
+    } else {
+        command.arg("--net=none");
+    }
+
+    // Mount each unix socket in our output pool from its host-side temp path into
+    // a convenient and terse location within the container.
+    // ffmpeg will care about the extension of this "file", it must match the segment
+    // type expected. (Hard-coded for now. Don't allow arbitrary strings here though.)
+
+    for (id, path) in output.paths.as_ref().iter().enumerate() {
+        command.arg(format!("-v={}:/out/{}.ts", path.to_str().unwrap(), id));
+    }
+
+    command
+        .arg(tc.image.digest.as_str())
+        .args(tc.args);
+
+    // Additional args for ffmpeg
+
+    command
+        .arg("-nostats")
+        .arg("-nostdin")
         .arg("-loglevel").arg("error")
-        .arg("-c").arg("copy")
         .arg("-f").arg("stream_segment")
         .arg("-segment_format").arg("mpegts")
-        //.arg("-segment_wrap").arg(NUM_SOCKETS.to_string())
-        .arg("-segment_time").arg(config::SEGMENT_MIN_SEC.to_string());
-//        .arg(format!("unix://{}/%d.ts", SOCKET_MOUNT));
+        .arg("-segment_wrap").arg((1 + output.paths.len()).to_string())
+        .arg("-segment_time").arg(tc.segment_time.to_string())
+        .arg("unix:///out/%d.ts");
 
-    log::info!("using command: {:?}", command);
+    log::info!("starting, {:?}", command);
 
     let mut _result = command
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn().unwrap();
 
-    Ok(())
+    Ok(output)
 }
