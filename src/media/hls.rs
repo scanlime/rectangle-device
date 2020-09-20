@@ -1,7 +1,7 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use crate::config;
-use crate::container::media::Container;
+use crate::media::MediaContainer;
 use crate::blocks::{BlockInfo, BlockUsage, DirectoryBlock, Link, RawFileBlock};
 use m3u8_rs::playlist::{MediaPlaylist, MediaSegment, MediaPlaylistType};
 use async_std::sync::Sender;
@@ -13,11 +13,11 @@ pub struct HLSContainer {
 }
 
 impl HLSContainer {
-    pub fn new(container: &Container) -> HLSContainer {
+    pub fn new(mc: &MediaContainer) -> HLSContainer {
         let mut hls_segments = vec![];
         let mut links = vec![];
 
-        for segment in &container.blocks {
+        for segment in &mc.blocks {
             let filename = format!("s{:05}.ts", segment.sequence);
 
             links.push(Link {

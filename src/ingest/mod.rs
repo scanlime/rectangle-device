@@ -11,9 +11,9 @@ use libp2p::PeerId;
 use libipld::Cid;
 use crate::config;
 use crate::blocks::{BlockUsage, BlockInfo, RawFileBlock};
-use crate::container::media::{Segment, Container};
-use crate::container::hls::HLSContainer;
-use crate::container::html::{HLSPlayer, HLSPlayerDist};
+use crate::media::{MediaBlockInfo, MediaContainer};
+use crate::media::hls::HLSContainer;
+use crate::media::html::{HLSPlayer, HLSPlayerDist};
 
 pub struct VideoIngest {
     block_sender: Sender<BlockInfo>,
@@ -56,7 +56,7 @@ impl VideoIngest {
         let mut reader = TsPacketReader::new(mpegts);
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
-        let mut container = Container { blocks: vec![] };
+        let mut container = MediaContainer { blocks: vec![] };
         let mut next_publish_at = Instant::now() + Duration::from_secs(config::PUBLISH_INTERVAL_SEC);
 
         let mut clock_latest: Option<ClockReference> = None;
@@ -108,7 +108,7 @@ impl VideoIngest {
 
                 // Hash the video segment here, then send it to the other task for storage
                 let segment_file = RawFileBlock::new(segment);
-                let segment = Segment {
+                let segment = MediaBlockInfo {
                     cid: segment_file.block.cid.clone(),
                     bytes: segment_bytes,
                     duration: segment_sec,
@@ -148,8 +148,8 @@ impl VideoIngest {
         }
     }
 
-    async fn send_player(&self, container: &Container) {
-        let hls = HLSContainer::new(container);
+    async fn send_player(&self, mc: &MediaContainer) {
+        let hls = HLSContainer::new(mc);
         let player = HLSPlayer::from_hls(&hls, &self.hls_dist, &self.local_peer_id);
         let player_cid = player.directory.block.cid.clone();
 

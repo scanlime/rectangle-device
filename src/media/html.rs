@@ -2,7 +2,7 @@
 
 use crate::config;
 use crate::blocks::{BlockInfo, BlockUsage, DirectoryBlock, Link, RawFileBlock, MultiBlockFile};
-use crate::container::hls::HLSContainer;
+use crate::media::hls::HLSContainer;
 use libipld::cid::Cid;
 use libp2p::PeerId;
 use async_std::sync::Sender;

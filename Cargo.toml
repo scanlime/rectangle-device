@@ -7,6 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rectangle-device-player = { version = "0.1.0", path = "player" }
 env_logger = "0.7.1"
 log = "0.4.11"
 async-std = { version = "1.6.0", features = ["unstable"] }
@@ -21,7 +22,8 @@ serde = "1.0.116"
 reqwest = { version = "0.10.8", features = ["json"] }
 tokio = "0.2.22"
 leb128 = "0.2.4"
-rectangle-device-player = { version = "0.1.0", path = "player" }
+rust-runc = "0.1.1"
+dkregistry = "0.4.0"
 
 [workspace]
 members = [ "player" ]

@@ -2,7 +2,7 @@
 
 pub mod blocks;
 pub mod config;
-pub mod container;
+pub mod media;
 pub mod ingest;
 pub mod network;
 pub mod pinner;
