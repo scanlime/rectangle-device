@@ -22,8 +22,6 @@ serde = "1.0.116"
 reqwest = { version = "0.10.8", features = ["json"] }
 tokio = "0.2.22"
 leb128 = "0.2.4"
-rust-runc = "0.1.1"
-dkregistry = "0.4.0"
 
 [workspace]
 members = [ "player" ]
