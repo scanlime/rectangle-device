@@ -21,6 +21,7 @@ use crate::media::{MediaBlockInfo, MediaContainer};
 use crate::media::hls::HLSContainer;
 use crate::media::html::{HLSPlayer, HLSPlayerDist};
 use crate::sandbox::ffmpeg;
+use crate::sandbox::socket::SocketPool;
 
 pub struct VideoIngest {
     block_sender: Sender<BlockInfo>,
@@ -38,6 +39,19 @@ impl VideoIngest {
     pub fn run(self, args: Vec<String>) {
         log::info!("ingest process starting, {:?}", args);
         ffmpeg::run(args).unwrap();
+
+        let tc = TranscodeConfig {
+            image: ffmpeg::default_image(),
+            args,
+            allow_networking: true,
+            segment_time: config::SEGMENT_MIN_SEC,
+        };
+
+        let output = task::block_on(async {
+            SocketPool::new(3).await.unwrap()
+        });
+
+        let child = ffmpeg::start(tc, output).unwrap();
 
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
