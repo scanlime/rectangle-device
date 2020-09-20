@@ -43,7 +43,7 @@ pub struct HLSPlayerDist {
 
 impl HLSPlayerDist {
     pub fn new() -> HLSPlayerDist {
-        let script = MultiBlockFile::new(include_bytes!("../../player/dist/main.js"));
+        let script = MultiBlockFile::new(rectangle_device_player::main_js_bytes());
         let script_link = script.link(config::JS_FILENAME.to_string());
         HLSPlayerDist {
             script,

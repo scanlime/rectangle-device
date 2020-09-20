@@ -21,3 +21,7 @@ serde = "1.0.116"
 reqwest = { version = "0.10.8", features = ["json"] }
 tokio = "0.2.22"
 leb128 = "0.2.4"
+rectangle-device-player = { version = "0.1.0", path = "player" }
+
+[workspace]
+members = [ "player" ]

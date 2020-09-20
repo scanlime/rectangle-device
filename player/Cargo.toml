@@ -1,0 +1,6 @@
+[package]
+name = "rectangle-device-player"
+version = "0.1.0"
+authors = ["Micah Elizabeth Scott <micah@scanlime.org>"]
+edition = "2018"
+
