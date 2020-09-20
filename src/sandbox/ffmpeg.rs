@@ -18,7 +18,7 @@ pub struct TranscodeConfig {
     pub segment_time: f32,
 }
 
-fn start(tc: TranscodeConfig, output: &SocketPool) -> Result<Child, Box<dyn Error>> {
+pub fn start(tc: TranscodeConfig, output: &SocketPool) -> Result<Child, Box<dyn Error>> {
 
     if !runtime::is_downloaded(&tc.image)? {
         runtime::download(&tc.image)?;

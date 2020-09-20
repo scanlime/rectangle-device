@@ -38,9 +38,8 @@ impl VideoIngest {
 
     pub fn run(self, args: Vec<String>) {
         log::info!("ingest process starting, {:?}", args);
-        ffmpeg::run(args).unwrap();
 
-        let tc = TranscodeConfig {
+        let tc = ffmpeg::TranscodeConfig {
             image: ffmpeg::default_image(),
             args,
             allow_networking: true,
@@ -51,7 +50,7 @@ impl VideoIngest {
             SocketPool::new(3).await.unwrap()
         });
 
-        let child = ffmpeg::start(tc, output).unwrap();
+        let child = ffmpeg::start(tc, &output).unwrap();
 
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);

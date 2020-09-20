@@ -7,7 +7,6 @@ use async_std::task;
 use async_std::io::ReadExt;
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use mpeg2ts::time::ClockReference;
-use std::error::Error;
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 use std::path::PathBuf;
@@ -20,7 +19,6 @@ use crate::media::{MediaBlockInfo, MediaContainer};
 use crate::media::hls::HLSContainer;
 use crate::media::html::{HLSPlayer, HLSPlayerDist};
 use crate::sandbox::runtime;
-
 use crate::sandbox::types::{ImageDigest, SandboxError};
 use std::process::{Command, Stdio};
 use std::error::Error;
@@ -34,20 +32,23 @@ pub struct SocketPool {
 }
 
 impl SocketPool {
-    pub fn new(size: usize) -> Result<SocketPool, Box<dyn Error>> {
+    pub async fn new(size: usize) -> Result<SocketPool, Box<dyn Error>> {
 
         let dir = tempfile::Builder::new().prefix(TEMP_PREFIX).tempdir()?;
         let paths: Vec<PathBuf> = (0..size).map(|n| dir.path().join(n.to_string()) ).collect();
 
-        let listeners: Vec<UnixListener> = (&paths).iter().map(|path| {
-            task::block_on(async {
-                UnixListener::bind(path).await.unwrap()
-            })
-        }).collect();
+        let mut listeners = vec![];
+        for path in &paths {
+            listeners.push(UnixListener::bind(path).await?);
+        }
 
-        SocketRing { dir, paths, mount_args, listeners, buffers: vec![] }
+        Ok(SocketPool {
+            dir, paths, listeners
+        })
     }
+}
 
+    /*
     fn recv(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
         async_std::task::block_on(self.recv_task())
     }
@@ -73,8 +74,6 @@ impl SocketPool {
                 });
             }
         });
-*/
-/*
         for (id, listener) in socket_listeners.into_iter().enumerate() {
             let sender = packet_sender.clone();
             std::thread::spawn(move || ts_packet_pump(id, listener, sender));
