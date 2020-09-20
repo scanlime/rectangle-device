@@ -31,10 +31,32 @@ impl VideoIngest {
     pub fn run(self, args: Vec<String>) {
         log::info!("ingest process starting, {:?}", args);
 
-        // To do: Sandbox ffmpeg. gaol is promising but we'd need to stop using stdout.
+        let mut podman_command = Command::new("podman");
+        let hash_exists_status = podman_command
+            .arg("image").arg("exists")
+            .arg(config::FFMPEG_CONTAINER_HASH)
+            .status().unwrap();
 
-        let mut command = Command::new("ffmpeg");
-        command
+        if !hash_exists_status.success() {
+            let mut podman_command = Command::new("podman");
+            let pulled_hash = String::from_utf8(
+                podman_command
+                    .arg("pull")
+                    .arg(&config::FFMPEG_CONTAINER_NAME)
+                    .stderr(Stdio::inherit())
+                    .output().unwrap().stdout
+                ).unwrap();
+            let pulled_hash = pulled_hash.trim();
+            assert_eq!(pulled_hash, config::FFMPEG_CONTAINER_HASH);
+        }
+
+        let mut podman_command = Command::new("podman");
+        let run_command = podman_command
+            .arg("run")
+            .arg("-a").arg("stdout,stderr")
+            .arg("--network").arg("slirp4netns")  // To do: restrict network
+            .arg("--read-only")
+            .arg(config::FFMPEG_CONTAINER_HASH)
             .arg("-nostats").arg("-nostdin")
             .arg("-loglevel").arg("error")
             .args(args)
@@ -45,9 +67,9 @@ impl VideoIngest {
             .arg("-segment_time").arg(config::SEGMENT_MIN_SEC.to_string())
             .arg("pipe:%d.ts");
 
-        log::info!("using command: {:?}", command);
+        log::info!("using command: {:?}", run_command);
 
-        let mpegts = command
+        let mpegts = run_command
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn().unwrap()

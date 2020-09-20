@@ -44,6 +44,12 @@ pub const IPFS_LOCAL_GATEWAY : &'static str = "99.149.215.66:8080";
 pub const IPFS_PINNING_API : &'static str = "http://99.149.215.66:5000/api/v1";
 pub const IPFS_PINNING_NAME : &'static str = "Experimental video stream from rectangle-device";
 
+// Video transcoder image to use. This should be replaced with a locally preferred image
+// as well as a list of acceptable images that we'll be happy to run if we are trying to
+// reproduce a particular video block which requests it.
+pub const FFMPEG_CONTAINER_NAME : &'static str = "docker.io/jrottenberg/ffmpeg:4.3.1-scratch38";
+pub const FFMPEG_CONTAINER_HASH : &'static str = "68126e39534eff79a8a4a4b7b546a11b8165a1ee8f1af93166d3071b170280a1";
+
 // Settings
 pub const HLS_FILENAME : &'static str = "index.m3u8";
 pub const JS_FILENAME : &'static str = "main.js";
