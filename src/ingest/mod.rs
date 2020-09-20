@@ -1,6 +1,6 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use async_std::sync::Sender;
+use async_std::sync::{Sender, channel};
 use async_std::task;
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use mpeg2ts::time::ClockReference;
@@ -53,8 +53,7 @@ impl VideoIngest {
         let mut podman_command = Command::new("podman");
         let run_command = podman_command
             .arg("run")
-            .arg("-a").arg("stdout")
-            .arg("-a").arg("stderr")
+            .arg("-a").arg("stdout,stderr")
             .arg("--net=slirp4netns")
             .arg("--dns=8.8.8.8")
             .arg("--dns-search=.")
@@ -64,25 +63,42 @@ impl VideoIngest {
             .arg("--detach=false")
             .arg("--privileged=false")
             .arg(config::FFMPEG_CONTAINER_HASH)
-            .arg("-nostats").arg("-nostdin")
-            .arg("-loglevel").arg("error")
             .args(args)
+            .arg("-nostats").arg("-nostdin")
+            .arg("-loglevel").arg("fatal")
             .arg("-c").arg("copy")
-            .arg("-f").arg("stream_segment")
+            .arg("-f").arg("segment")
             .arg("-segment_format").arg("mpegts")
-            .arg("-segment_wrap").arg("1")
+            .arg("-segment_start_number").arg("1")
+            .arg("-segment_wrap").arg("3")
             .arg("-segment_time").arg(config::SEGMENT_MIN_SEC.to_string())
             .arg("pipe:%d.ts");
 
         log::info!("using command: {:?}", run_command);
 
-        let mpegts = run_command
+        let mut run_result = run_command
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn().unwrap()
-            .stdout.take().unwrap();
+            .stderr(Stdio::piped())
+            .spawn().unwrap();
 
-        let mut reader = TsPacketReader::new(mpegts);
+        let (packet_sender, packet_receiver) = channel(32);
+        let mut reader0 = TsPacketReader::new(run_result.stdout.take().unwrap());
+        let mut reader1 = TsPacketReader::new(run_result.stderr.take().unwrap());
+        let sender0 = packet_sender.clone();
+        let sender1 = packet_sender.clone();
+
+        std::thread::spawn(move || {
+            while let Some(packet) = reader0.read_ts_packet().unwrap() {
+                task::block_on(sender0.send((0, packet)));
+            };
+        });
+        std::thread::spawn(move || {
+            while let Some(packet) = reader1.read_ts_packet().unwrap() {
+                println!("stderr packet {:?}", packet);
+                task::block_on(sender1.send((1, packet)));
+            };
+        });
+
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
         let mut container = MediaContainer { blocks: vec![] };
@@ -98,8 +114,7 @@ impl VideoIngest {
             self.hls_dist.clone().send(&self.block_sender).await;
         });
 
-        while let Some(packet) = reader.read_ts_packet().unwrap() {
-
+        while let Ok((toggle, packet)) = task::block_on(packet_receiver.recv()) {
             // Save a copy of the PAT (Program Association Table) and reinsert it at every segment
             if packet.header.pid.as_u16() == mpeg2ts::ts::Pid::PAT {
                 program_association_table = Some(packet.clone());
