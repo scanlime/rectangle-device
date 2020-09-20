@@ -53,9 +53,16 @@ impl VideoIngest {
         let mut podman_command = Command::new("podman");
         let run_command = podman_command
             .arg("run")
-            .arg("-a").arg("stdout,stderr")
-            .arg("--network").arg("slirp4netns")  // To do: restrict network
+            .arg("-a").arg("stdout")
+            .arg("-a").arg("stderr")
+            .arg("--net=slirp4netns")
+            .arg("--dns=8.8.8.8")
+            .arg("--dns-search=.")
+            .arg("--env-host=false")
             .arg("--read-only")
+            .arg("--restart=no")
+            .arg("--detach=false")
+            .arg("--privileged=false")
             .arg(config::FFMPEG_CONTAINER_HASH)
             .arg("-nostats").arg("-nostdin")
             .arg("-loglevel").arg("error")
