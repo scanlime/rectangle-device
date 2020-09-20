@@ -25,46 +25,19 @@ use crate::sandbox::types::{ImageDigest, SandboxError};
 use std::process::{Command, Stdio};
 use std::error::Error;
 
-const TEMP_PREFIX : &'static str = "rectdev.";
-const SOCKET_MOUNT : &'static str = "/rectdev";
+const TEMP_PREFIX : &'static str = "rect-socket.";
 
 pub struct SocketPool {
-
+    pub paths: Vec<PathBuf>,
+    listeners: Vec<UnixListener>,
+    dir: TempDir,
 }
-
-struct PoolItem {
-    host_path: 
-}
-
 
 impl SocketPool {
-    pub fn push(&mut self, name: &str) ->
-    }
-}
+    pub fn new(size: usize) -> Result<SocketPool, Box<dyn Error>> {
 
-/*
-
-
-struct SocketRing {
-    dir: TempDir,
-    paths: Vec<PathBuf>,
-    mount_args: Vec<String>,
-    listeners: Vec<UnixListener>,
-    buffers: Vec<u8>,
-}
-*/
-/*
-impl SocketRing {
-    fn new() -> SocketRing {
-        let dir = tempfile::Builder::new().prefix(TEMP_PREFIX).tempdir().unwrap();
-
-        let paths: Vec<PathBuf> = (0..NUM_SOCKETS).map(|id| {
-            dir.path().join(format!("s{}", id))
-        }).collect();
-
-        let mount_args = (0..NUM_SOCKETS).map(|id| {
-            format!("-v={}:{}/{}.ts", paths[id].to_str().unwrap(), SOCKET_MOUNT, id)
-        }).collect();
+        let dir = tempfile::Builder::new().prefix(TEMP_PREFIX).tempdir()?;
+        let paths: Vec<PathBuf> = (0..size).map(|n| dir.path().join(n.to_string()) ).collect();
 
         let listeners: Vec<UnixListener> = (&paths).iter().map(|path| {
             task::block_on(async {

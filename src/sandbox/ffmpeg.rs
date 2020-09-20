@@ -1,9 +1,10 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use std::error::Error;
-use std::process::Stdio;
+use std::process::{Stdio, Child};
 use crate::config;
 use crate::sandbox::runtime;
+use crate::sandbox::socket::SocketPool;
 use crate::sandbox::types::ImageDigest;
 
 pub fn default_image() -> ImageDigest {
@@ -17,14 +18,11 @@ pub struct TranscodeConfig {
     pub segment_time: f32,
 }
 
-pub fn transcode(tc: TranscodeConfig) -> Result<SocketPool, Box<dyn Error>> {
+fn start(tc: TranscodeConfig, output: &SocketPool) -> Result<Child, Box<dyn Error>> {
 
     if !runtime::is_downloaded(&tc.image)? {
         runtime::download(&tc.image)?;
     }
-
-    // Output is through a small pool of per-segment unix domain sockets mapped into the container
-    let output = SocketPool::new(3);
 
     // Be specific about sandbox options
     let mut command = runtime::command();
@@ -55,7 +53,7 @@ pub fn transcode(tc: TranscodeConfig) -> Result<SocketPool, Box<dyn Error>> {
     // ffmpeg will care about the extension of this "file", it must match the segment
     // type expected. (Hard-coded for now. Don't allow arbitrary strings here though.)
 
-    for (id, path) in output.paths.as_ref().iter().enumerate() {
+    for (id, path) in output.paths.iter().enumerate() {
         command.arg(format!("-v={}:/out/{}.ts", path.to_str().unwrap(), id));
     }
 
@@ -77,10 +75,8 @@ pub fn transcode(tc: TranscodeConfig) -> Result<SocketPool, Box<dyn Error>> {
 
     log::info!("starting, {:?}", command);
 
-    let mut _result = command
+    Ok(command
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .spawn().unwrap();
-
-    Ok(output)
+        .spawn()?)
 }
