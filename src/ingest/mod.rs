@@ -1,14 +1,18 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
+use async_std::stream::StreamExt;
 use async_std::sync::{Sender, channel};
+use async_std::os::unix::net::UnixListener;
 use async_std::task;
+use async_std::io::ReadExt;
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use mpeg2ts::time::ClockReference;
+use std::error::Error;
 use std::io::Cursor;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
-use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
+use tempfile::TempDir;
 use libp2p::PeerId;
 use libipld::Cid;
 use crate::config;
@@ -24,10 +28,86 @@ pub struct VideoIngest {
     local_peer_id: PeerId,
 }
 
-const NUM_SOCKETS : usize = 2;
-const TEMP_PREFIX : &'static str = "rect.";
-const SOCKET_MOUNT : &'static str = "/var/run/rect";
+struct SocketRing {
+    dir: TempDir,
+    paths: Vec<PathBuf>,
+    mount_args: Vec<String>,
+    listeners: Vec<UnixListener>,
+    buffers: Vec<u8>,
+}
+
+const NUM_SOCKETS : usize = 3;
+const TEMP_PREFIX : &'static str = "rectangle-device.";
+const SOCKET_MOUNT : &'static str = "/var/run/rectangle-device";
 const PODMAN : &'static str = "podman";
+
+impl SocketRing {
+    fn new() -> SocketRing {
+        let dir = tempfile::Builder::new().prefix(TEMP_PREFIX).tempdir().unwrap();
+
+        let paths: Vec<PathBuf> = (0..NUM_SOCKETS).map(|id| {
+            dir.path().join(format!("s{}", id))
+        }).collect();
+
+        let mount_args = (0..NUM_SOCKETS).map(|id| {
+            format!("-v={}:{}/{}.ts", paths[id].to_str().unwrap(), SOCKET_MOUNT, id)
+        }).collect();
+
+        let listeners: Vec<UnixListener> = (&paths).iter().map(|path| {
+            task::block_on(async {
+                UnixListener::bind(path).await.unwrap()
+            })
+        }).collect();
+
+        SocketRing { dir, paths, mount_args, listeners, buffers: vec![] }
+    }
+
+    fn recv(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
+        async_std::task::block_on(self.recv_task())
+    }
+
+    async fn recv_task(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
+        Ok(vec![])
+    }
+
+/*
+        task::block_on(async {
+            for (id, listener) in socket_listeners.into_iter().enumerate() {
+                println!("{}", id);
+                task::spawn(async move {
+                    let mut incoming = listener.incoming();
+                    while let Some(stream) = incoming.next().await {
+                        if let Ok(mut stream) = stream {
+                            println!("{} accepting", id);
+
+                            let mut buf = [0; 1024*1024];
+                            while let Ok(size) = stream.read(&mut buf).await {
+                                println!("{} got {} bytes", id, size);
+                            }
+                        }
+                    }
+                });
+            }
+        });
+*/
+/*
+        for (id, listener) in socket_listeners.into_iter().enumerate() {
+            let sender = packet_sender.clone();
+            std::thread::spawn(move || ts_packet_pump(id, listener, sender));
+        }
+        fn ts_packet_pump(id: usize, listener: UnixListener, sender: Sender<(usize, TsPacket)>) {
+            for stream in listener.incoming() {
+                let mut reader = TsPacketReader::new(stream.unwrap());
+                while let Some(packet) = reader.read_ts_packet().unwrap() {
+                    task::block_on(sender.send((id, packet)));
+                };
+            }
+        }
+*/
+panic!("nope");
+    //    Ok(())
+    }
+}
 
 fn pull_image_if_necessary() {
     let mut podman_command = Command::new(PODMAN);
@@ -52,15 +132,6 @@ fn pull_image_if_necessary() {
     }
 }
 
-fn ts_packet_pump(id: usize, listener: UnixListener, sender: Sender<(usize, TsPacket)>) {
-    for stream in listener.incoming() {
-        let mut reader = TsPacketReader::new(stream.unwrap());
-        while let Some(packet) = reader.read_ts_packet().unwrap() {
-            task::block_on(sender.send((id, packet)));
-        };
-    }
-}
-
 impl VideoIngest {
     pub fn new(block_sender: Sender<BlockInfo>, pin_sender: Sender<Cid>, local_peer_id: PeerId) -> VideoIngest {
         let hls_dist = HLSPlayerDist::new();
@@ -72,20 +143,7 @@ impl VideoIngest {
 
         pull_image_if_necessary();
 
-        let tempdir = tempfile::Builder::new().prefix(TEMP_PREFIX).tempdir().unwrap();
-
-        let socket_paths: Vec<PathBuf> = (0..NUM_SOCKETS).map(|id| {
-            tempdir.path().join(format!("s{}", id))
-        }).collect();
-
-        let socket_listeners: Vec<UnixListener> = (&socket_paths).iter().map(|path| {
-            UnixListener::bind(path).unwrap()
-        }).collect();
-
-        let socket_mapping = (0..NUM_SOCKETS).map(|id| {
-            format!("-v={}:{}/{}.ts", socket_paths[id].to_str().unwrap(), SOCKET_MOUNT, id)
-        });
-
+        let socket_ring = SocketRing::new();
         let mut podman_command = Command::new(PODMAN);
         let run_command = podman_command
             .arg("run")
@@ -97,13 +155,13 @@ impl VideoIngest {
             .arg("--restart=no")
             .arg("--detach=false")
             .arg("--privileged=false")
-            .args(socket_mapping)
+            .args(socket_ring.mount_args.clone())
             .arg(config::FFMPEG_CONTAINER_HASH)
             .args(args)
             .arg("-nostats").arg("-nostdin")
             .arg("-loglevel").arg("error")
             .arg("-c").arg("copy")
-            .arg("-f").arg("segment")
+            .arg("-f").arg("stream_segment")
             .arg("-segment_format").arg("mpegts")
             .arg("-segment_wrap").arg(NUM_SOCKETS.to_string())
             .arg("-segment_time").arg(config::SEGMENT_MIN_SEC.to_string())
@@ -115,13 +173,6 @@ impl VideoIngest {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn().unwrap();
-
-        let (packet_sender, packet_receiver) = channel::<(usize, TsPacket)>(32);
-
-        for (id, listener) in socket_listeners.into_iter().enumerate() {
-            let sender = packet_sender.clone();
-            std::thread::spawn(move || ts_packet_pump(id, listener, sender));
-        }
 
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
@@ -138,10 +189,9 @@ impl VideoIngest {
             self.hls_dist.clone().send(&self.block_sender).await;
         });
 
-        let mut prev_toggle = 0;
-        while let Ok((toggle, packet)) = task::block_on(packet_receiver.recv()) {
-            let toggle_edge = toggle != prev_toggle;
-            prev_toggle = toggle;
+        while let Ok(buffer) = socket_ring.recv() {
+            let mut reader = TsPacketReader::new(cursor::new(buffer))
+        -        while let Some(packet) = reader.read_ts_packet().unwrap() {
 
             // Save a copy of the PAT (Program Association Table) and reinsert it at every segment
             if packet.header.pid.as_u16() == mpeg2ts::ts::Pid::PAT {
@@ -150,12 +200,14 @@ impl VideoIngest {
 
             // What would the segment size be if we output one right before 'packet'
             let segment_bytes = cursor.position() as usize;
-            let segment_ticks = clock_latest.map_or(0, |c| c.as_u64()) - segment_clock.or(clock_first).map_or(0, |c| c.as_u64());
+            let segment_ticks =
+                clock_latest.or(clock_first).map_or(0, |c| c.as_u64()) -
+                segment_clock.or(clock_first).map_or(0, |c| c.as_u64());
             let segment_sec = (segment_ticks as f32) * (1.0 / (ClockReference::RESOLUTION as f32));
 
             // To do: determining keyframes properly actually.
             // current strategy uses ffmpeg's segmentation as much as possible.
-            let is_keyframe = toggle_edge;
+            let is_keyframe = edge_flag;
 
             // This is the most recent timestamp we know about as of 'packet'
             if let Some(pcr) = packet.adaptation_field.as_ref().and_then(|a| a.pcr) {
