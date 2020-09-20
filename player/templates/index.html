@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=100.0, minimum-scale=1.0" />
+        <link rel="icon" href="data:," />
+        <script src="https://{{ main_js_cid }}.ipfs.{{ ipfs_gateway }}/"></script>
+        <style>
+            body {
+                background: #000;
+                margin: 0;
+            }
+            video {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                left: 0;
+                top: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <video muted controls
+            data-ipfs-src="{{ hls_cid }}/{{ hls_name }}"
+            data-ipfs-delegates="{{ ipfs_delegates }}"
+            data-ipfs-bootstrap="{{ ipfs_bootstrap }}" ></video>
+    </body>
+</html>

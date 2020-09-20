@@ -6,33 +6,19 @@ use crate::container::hls::HLSContainer;
 use libipld::cid::Cid;
 use libp2p::PeerId;
 use async_std::sync::Sender;
+use rectangle_device_player::{IndexTemplate, Template, main_js};
 
 fn index_html_template(hls_cid: &Cid, script_cid: &Cid, local_peer_id: &PeerId) -> String {
-    format!(r#"<!DOCTYPE html>
-<html>
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=100.0, minimum-scale=1.0" />
-        <link rel="icon" href="data:," />
-        <script src="https://{script:}.ipfs.{gateway:}/"></script>
-        <style>body {{ background: #000; margin: 0; }} video {{ position: absolute; width: 100%; height: 100%; left: 0; top: 0; }}</style>
-    </head>
-    <body>
-        <video muted controls
-            data-ipfs-src="{hls_cid:}/{hls_name:}"
-            data-ipfs-delegates="{router_addr:}/p2p/{router_id:}"
-            data-ipfs-bootstrap="{router_addr:}/p2p/{router_id:} {router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id}"
-            ></video>
-    </body>
-</html>
-"#,
-    script = script_cid.to_string(),
-    gateway = config::IPFS_GATEWAY,
-    router_addr = config::IPFS_ROUTER_ADDR_WSS,
-    router_id = config::IPFS_ROUTER_ID,
-    hls_cid = hls_cid.to_string(),
-    hls_name = config::HLS_FILENAME,
-    local_id = local_peer_id.to_string())
+    let router_multiaddr = format!("{}/p2p/{}", config::IPFS_ROUTER_ADDR_WSS, config::IPFS_ROUTER_ID);
+    let bootstrap = format!("{} {}/p2p-circuit/p2p/{}", router_multiaddr, router_multiaddr, local_peer_id.to_string());
+    IndexTemplate {
+        main_js_cid: &script_cid.to_string(),
+        ipfs_gateway: config::IPFS_GATEWAY,
+        ipfs_delegates: &router_multiaddr,
+        ipfs_bootstrap: &bootstrap,
+        hls_cid: &hls_cid.to_string(),
+        hls_name: config::HLS_FILENAME,
+    }.render().unwrap()
 }
 
 #[derive(Clone)]
@@ -43,7 +29,7 @@ pub struct HLSPlayerDist {
 
 impl HLSPlayerDist {
     pub fn new() -> HLSPlayerDist {
-        let script = MultiBlockFile::new(rectangle_device_player::main_js_bytes());
+        let script = MultiBlockFile::new(main_js().as_bytes());
         let script_link = script.link(config::JS_FILENAME.to_string());
         HLSPlayerDist {
             script,
