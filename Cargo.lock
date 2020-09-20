@@ -2656,6 +2656,7 @@ dependencies = [
  "async-std",
  "env_logger",
  "futures",
+ "lazy_static",
  "leb128",
  "libipld",
  "libp2p",
@@ -2665,9 +2666,11 @@ dependencies = [
  "mpeg2ts",
  "rand 0.7.3",
  "rectangle-device-player",
+ "regex",
  "reqwest",
  "serde",
  "tempfile",
+ "thiserror",
  "tokio",
 ]
 
