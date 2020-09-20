@@ -7,6 +7,8 @@ use mpeg2ts::time::ClockReference;
 use std::io::Cursor;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+use std::os::unix::net::UnixListener;
+use std::path::PathBuf;
 use libp2p::PeerId;
 use libipld::Cid;
 use crate::config;
@@ -22,6 +24,43 @@ pub struct VideoIngest {
     local_peer_id: PeerId,
 }
 
+const NUM_SOCKETS : usize = 2;
+const TEMP_PREFIX : &'static str = "rect.";
+const SOCKET_MOUNT : &'static str = "/var/run/rect";
+const PODMAN : &'static str = "podman";
+
+fn pull_image_if_necessary() {
+    let mut podman_command = Command::new(PODMAN);
+    let hash_exists_status = podman_command
+        .arg("image").arg("exists")
+        .arg(config::FFMPEG_CONTAINER_HASH)
+        .status().unwrap();
+
+    if !hash_exists_status.success() {
+        log::warn!("downloading transcode container image");
+
+        let mut podman_command = Command::new(PODMAN);
+        let pulled_hash = String::from_utf8(
+            podman_command
+                .arg("pull")
+                .arg(&config::FFMPEG_CONTAINER_NAME)
+                .stderr(Stdio::inherit())
+                .output().unwrap().stdout
+            ).unwrap();
+        let pulled_hash = pulled_hash.trim();
+        assert_eq!(pulled_hash, config::FFMPEG_CONTAINER_HASH);
+    }
+}
+
+fn ts_packet_pump(id: usize, listener: UnixListener, sender: Sender<(usize, TsPacket)>) {
+    for stream in listener.incoming() {
+        let mut reader = TsPacketReader::new(stream.unwrap());
+        while let Some(packet) = reader.read_ts_packet().unwrap() {
+            task::block_on(sender.send((id, packet)));
+        };
+    }
+}
+
 impl VideoIngest {
     pub fn new(block_sender: Sender<BlockInfo>, pin_sender: Sender<Cid>, local_peer_id: PeerId) -> VideoIngest {
         let hls_dist = HLSPlayerDist::new();
@@ -31,73 +70,58 @@ impl VideoIngest {
     pub fn run(self, args: Vec<String>) {
         log::info!("ingest process starting, {:?}", args);
 
-        let mut podman_command = Command::new("podman");
-        let hash_exists_status = podman_command
-            .arg("image").arg("exists")
-            .arg(config::FFMPEG_CONTAINER_HASH)
-            .status().unwrap();
+        pull_image_if_necessary();
 
-        if !hash_exists_status.success() {
-            let mut podman_command = Command::new("podman");
-            let pulled_hash = String::from_utf8(
-                podman_command
-                    .arg("pull")
-                    .arg(&config::FFMPEG_CONTAINER_NAME)
-                    .stderr(Stdio::inherit())
-                    .output().unwrap().stdout
-                ).unwrap();
-            let pulled_hash = pulled_hash.trim();
-            assert_eq!(pulled_hash, config::FFMPEG_CONTAINER_HASH);
-        }
+        let tempdir = tempfile::Builder::new().prefix(TEMP_PREFIX).tempdir().unwrap();
 
-        let mut podman_command = Command::new("podman");
+        let socket_paths: Vec<PathBuf> = (0..NUM_SOCKETS).map(|id| {
+            tempdir.path().join(format!("s{}", id))
+        }).collect();
+
+        let socket_listeners: Vec<UnixListener> = (&socket_paths).iter().map(|path| {
+            UnixListener::bind(path).unwrap()
+        }).collect();
+
+        let socket_mapping = (0..NUM_SOCKETS).map(|id| {
+            format!("-v={}:{}/{}.ts", socket_paths[id].to_str().unwrap(), SOCKET_MOUNT, id)
+        });
+
+        let mut podman_command = Command::new(PODMAN);
         let run_command = podman_command
             .arg("run")
             .arg("-a").arg("stdout,stderr")
             .arg("--net=slirp4netns")
-            .arg("--dns=8.8.8.8")
             .arg("--dns-search=.")
             .arg("--env-host=false")
             .arg("--read-only")
             .arg("--restart=no")
             .arg("--detach=false")
             .arg("--privileged=false")
+            .args(socket_mapping)
             .arg(config::FFMPEG_CONTAINER_HASH)
             .args(args)
             .arg("-nostats").arg("-nostdin")
-            .arg("-loglevel").arg("fatal")
+            .arg("-loglevel").arg("error")
             .arg("-c").arg("copy")
             .arg("-f").arg("segment")
             .arg("-segment_format").arg("mpegts")
-            .arg("-segment_start_number").arg("1")
-            .arg("-segment_wrap").arg("3")
+            .arg("-segment_wrap").arg(NUM_SOCKETS.to_string())
             .arg("-segment_time").arg(config::SEGMENT_MIN_SEC.to_string())
-            .arg("pipe:%d.ts");
+            .arg(format!("unix://{}/%d.ts", SOCKET_MOUNT));
 
         log::info!("using command: {:?}", run_command);
 
-        let mut run_result = run_command
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+        let mut _run_result = run_command
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn().unwrap();
 
-        let (packet_sender, packet_receiver) = channel(32);
-        let mut reader0 = TsPacketReader::new(run_result.stdout.take().unwrap());
-        let mut reader1 = TsPacketReader::new(run_result.stderr.take().unwrap());
-        let sender0 = packet_sender.clone();
-        let sender1 = packet_sender.clone();
+        let (packet_sender, packet_receiver) = channel::<(usize, TsPacket)>(32);
 
-        std::thread::spawn(move || {
-            while let Some(packet) = reader0.read_ts_packet().unwrap() {
-                task::block_on(sender0.send((0, packet)));
-            };
-        });
-        std::thread::spawn(move || {
-            while let Some(packet) = reader1.read_ts_packet().unwrap() {
-                println!("stderr packet {:?}", packet);
-                task::block_on(sender1.send((1, packet)));
-            };
-        });
+        for (id, listener) in socket_listeners.into_iter().enumerate() {
+            let sender = packet_sender.clone();
+            std::thread::spawn(move || ts_packet_pump(id, listener, sender));
+        }
 
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
@@ -114,7 +138,11 @@ impl VideoIngest {
             self.hls_dist.clone().send(&self.block_sender).await;
         });
 
+        let mut prev_toggle = 0;
         while let Ok((toggle, packet)) = task::block_on(packet_receiver.recv()) {
+            let toggle_edge = toggle != prev_toggle;
+            prev_toggle = toggle;
+
             // Save a copy of the PAT (Program Association Table) and reinsert it at every segment
             if packet.header.pid.as_u16() == mpeg2ts::ts::Pid::PAT {
                 program_association_table = Some(packet.clone());
@@ -125,14 +153,9 @@ impl VideoIngest {
             let segment_ticks = clock_latest.map_or(0, |c| c.as_u64()) - segment_clock.or(clock_first).map_or(0, |c| c.as_u64());
             let segment_sec = (segment_ticks as f32) * (1.0 / (ClockReference::RESOLUTION as f32));
 
-            // To do: determining keyframes properly actually requires looking at the video
-            // packet data. At the mpeg-ts layer there's a "random access indicator" which
-            // seems to be vaguely useful but if you actually start playback there you're still
-            // missing the mpeg-ts PAT and several other things. This code need to do
-            // a much better job, but for now with ffmpeg's help the stream seems regular
-            // enough that we can safely split it just before Pid(17) containing the
-            // Service Description Table.
-            let is_keyframe = packet.header.pid.as_u16() == 17;
+            // To do: determining keyframes properly actually.
+            // current strategy uses ffmpeg's segmentation as much as possible.
+            let is_keyframe = toggle_edge;
 
             // This is the most recent timestamp we know about as of 'packet'
             if let Some(pcr) = packet.adaptation_field.as_ref().and_then(|a| a.pcr) {

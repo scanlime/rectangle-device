@@ -2667,6 +2667,7 @@ dependencies = [
  "rectangle-device-player",
  "reqwest",
  "serde",
+ "tempfile",
  "tokio",
 ]
 
