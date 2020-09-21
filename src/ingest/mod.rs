@@ -167,7 +167,7 @@ impl VideoIngest {
         let mut write_buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
 
         // Asynchronously set up a way to break out of the incoming connection
-        // loop when the child process exits, by sending a ze
+        // loop when the child process exits, by sending a zero length segment
         let socket_path = output.socket_path.clone();
         let status_notifier = task::spawn(async move {
             let status = child.status().await;
