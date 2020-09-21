@@ -84,6 +84,25 @@ impl VideoIngest {
         self.pin_sender.send(player_cid).await;
     }
 
+    async fn push_video_block(&mut self, data: &[u8], duration: f32) {
+        // This is where the hash computation happens
+        let file = RawFileBlock::new(data);
+
+        let info = MediaBlockInfo {
+            cid: file.block.cid.clone(),
+            bytes: data.len(),
+            duration,
+            sequence: self.mc.blocks.len()
+        };
+
+        let sequence = info.sequence;
+        let usage = BlockUsage::VideoSegment(sequence);
+        self.mc.blocks.push(info);
+
+        log::trace!("video segment {}", sequence);
+        file.send(&self.block_sender, usage).await;
+    }
+
     fn inspect_packet(&mut self, packet: &TsPacket) {
         // Save a copy of the PAT (Program Association Table) so we can reinsert if necessary
         if packet.header.pid.as_u16() == mpeg2ts::ts::Pid::PAT {
@@ -97,6 +116,19 @@ impl VideoIngest {
                 self.clock_first = self.clock_latest;
             }
         }
+    }
+
+    fn clock_latest_as_u64(&self) -> u64 {
+        self.clock_latest.or(self.clock_first).map_or(0, |c| c.as_u64())
+    }
+
+    fn segment_clock_as_u64(&self) -> u64 {
+        self.clock_latest.or(self.clock_first).map_or(0, |c| c.as_u64())
+    }
+
+    fn latest_segment_duration(&self) -> f32 {
+        let segment_ticks = self.clock_latest_as_u64() - self.segment_clock_as_u64();
+        (segment_ticks as f32) * (1.0 / (ClockReference::RESOLUTION as f32))
     }
 
     async fn task(mut self, tc: ffmpeg::TranscodeConfig) -> Result<MediaContainer, Box<dyn Error>> {
@@ -117,14 +149,19 @@ impl VideoIngest {
 
         while let Some(Ok(mut stream)) = incoming.next().await {
             assert!(buffer.is_empty());
+
+            // Get the entire segment for now, since TsPacketReader seems like it
+            // will read a partial packet and lose data. To do: get a better parser?
             stream.read_to_end(&mut buffer).await;
             log::info!("segment is {} bytes", buffer.len());
 
+            // Scan packets for timestamps and the PID association
             let mut ts_reader = TsPacketReader::new(Cursor::new(&mut buffer));
             while let Ok(Some(packet)) = ts_reader.read_ts_packet() {
                 self.inspect_packet(&packet);
             }
 
+            // If the segment is already small enough this is good, store it
             let now = Instant::now();
             if now > next_publish_at {
                 next_publish_at = now + Duration::from_secs(config::PUBLISH_INTERVAL_SEC);
@@ -146,16 +183,6 @@ impl VideoIngest {
 
 /*
 
-            // What would the segment size be if we output one right before 'packet'
-            let segment_bytes = cursor.position() as usize;
-            let segment_ticks =
-                clock_latest.or(clock_first).map_or(0, |c| c.as_u64()) -
-                segment_clock.or(clock_first).map_or(0, |c| c.as_u64());
-            let segment_sec = (segment_ticks as f32) * (1.0 / (ClockReference::RESOLUTION as f32));
-
-            // To do: determining keyframes properly actually.
-            // current strategy uses ffmpeg's segmentation as much as possible.
-            let is_keyframe = edge_flag;
 
             // Split on keyframes, but respect our hard limits on time and size
             if (is_keyframe && segment_bytes >= config::SEGMENT_MIN_BYTES && segment_sec >= config::SEGMENT_MIN_SEC) ||
@@ -164,23 +191,7 @@ impl VideoIngest {
 
                 cursor.set_position(0);
                 let segment = cursor.get_ref().get(0..segment_bytes).unwrap();
-
-                // Hash the video segment here, then send it to the other task for storage
-                let segment_file = RawFileBlock::new(segment);
-                let segment = MediaBlockInfo {
-                    cid: segment_file.block.cid.clone(),
-                    bytes: segment_bytes,
-                    duration: segment_sec,
-                    sequence: container.blocks.len()
-                };
-                task::block_on(async {
-                    log::trace!("video segment {}", segment.sequence);
-                    segment_file.send(&self.block_sender, BlockUsage::VideoSegment(segment.sequence)).await
-                });
-
-                // Add each block to a table of contents, which is sent less frequently
-                container.blocks.push(segment);
-
+----
 
                 // Each segment starts with a PAT so the other packets can be identified
                 if let Some(pat) = &program_association_table {
