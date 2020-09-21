@@ -32,11 +32,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     })?;
 
     thread::Builder::new().name("vid-in".to_string()).spawn(move || {
-        ingest.run(if video_args.len() == 0 {
+        let args = if video_args.len() == 0 {
             config::default_args()
         } else {
             video_args
-        });
+        };
+        ingest.run(args).unwrap();
     })?;
 
     task::Builder::new().name("p2p-node".to_string()).blocking(node);

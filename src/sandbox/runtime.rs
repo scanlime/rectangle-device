@@ -3,9 +3,6 @@
 use crate::sandbox::types::{ImageDigest, SandboxError};
 use std::process::{Command, Stdio};
 use std::error::Error;
-use tempfile::TempDir;
-use std::fs::Permissions;
-use std::os::unix::fs::PermissionsExt;
 
 pub fn command() -> Command {
     Command::new("podman")

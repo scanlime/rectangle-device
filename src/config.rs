@@ -5,7 +5,10 @@ use libp2p::PeerId;
 // Input, as a partial ffmpeg command line. Note that filenames here are parsed according to
 // libavformat's protocol rules. This can be overridden by giving a command line.
 pub fn default_args() -> Vec<String> {
-    vec![ "-i".to_string(), "https://live.diode.zone/hls/eyesopod/index.m3u8".to_string()]
+    vec![
+        "-i".to_string(), "https://live.diode.zone/hls/eyesopod/index.m3u8".to_string(),
+        "-c".to_string(), "copy".to_string()
+    ]
 }
 
 // Network dependency: public HTTPS gateway

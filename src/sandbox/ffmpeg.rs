@@ -11,6 +11,7 @@ pub fn default_image() -> ImageDigest {
     ImageDigest::parse(config::FFMPEG_CONTAINER_NAME, config::FFMPEG_CONTAINER_HASH).unwrap()
 }
 
+#[derive(Clone, Debug)]
 pub struct TranscodeConfig {
     pub image: ImageDigest,
     pub args: Vec<String>,

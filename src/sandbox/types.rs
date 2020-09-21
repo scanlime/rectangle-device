@@ -13,7 +13,7 @@ pub enum SandboxError {
     UnexpectedDigest(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ImageDigest{
     pub image: Image,
     pub digest: Digest
@@ -28,7 +28,7 @@ impl ImageDigest {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Image {
     inner: String
 }
@@ -90,7 +90,7 @@ impl Image {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Digest {
     inner: String
 }
