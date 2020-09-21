@@ -45,5 +45,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     task::Builder::new().name("p2p-node".to_string()).blocking(node);
 
+    log::warn!("exiting normally?");
     Ok(())
 }
