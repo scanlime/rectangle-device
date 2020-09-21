@@ -1,25 +1,26 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
+use async_std::io::ReadExt;
+use async_std::os::unix::net::UnixStream;
 use async_std::stream::StreamExt;
 use async_std::sync::Sender;
 use async_std::task;
-use async_std::io::ReadExt;
-use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
-use mpeg2ts::time::ClockReference;
-use std::error::Error;
-use std::io::Cursor;
-use std::process::ExitStatus;
-use std::time::{Duration, Instant};
-use thiserror::Error;
-use libp2p::PeerId;
-use libipld::Cid;
-use crate::config;
 use crate::blocks::{BlockUsage, BlockInfo, RawFileBlock};
+use crate::config;
 use crate::media::{MediaBlockInfo, MediaContainer};
 use crate::media::hls::HLSContainer;
 use crate::media::html::{HLSPlayer, HLSPlayerDist};
 use crate::sandbox::ffmpeg;
 use crate::sandbox::socket::SocketPool;
+use libipld::Cid;
+use libp2p::PeerId;
+use mpeg2ts::time::ClockReference;
+use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
+use std::error::Error;
+use std::io::Cursor;
+use std::process::ExitStatus;
+use std::time::{Duration, Instant};
+use thiserror::Error;
 
 pub struct VideoIngest {
     block_sender: Sender<BlockInfo>,
@@ -72,7 +73,9 @@ impl VideoIngest {
             allow_networking: true,
             segment_time: config::SEGMENT_MIN_SEC,
         };
-        task::block_on(self.task(tc))
+        let mc = task::block_on(self.task(tc))?;
+        log::trace!("finished successfully");
+        Ok(mc)
     }
 
     async fn send_player(&self) {
@@ -156,14 +159,24 @@ impl VideoIngest {
         // Use one socket for the segment output; ffmpeg will re-open it for each segment
         let mut pool = SocketPool::new()?;
         let output = pool.bind("/out/0.ts").await?;
-        let mut incoming = output.incoming();
+        let mut incoming = output.listener.incoming();
 
         let mut child = ffmpeg::start(tc, &pool).await?;
 
         let mut read_buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
         let mut write_buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
 
+        // Asynchronously set up a way to break out of the incoming connection
+        // loop when the child process exits, by sending a ze
+        let socket_path = output.socket_path.clone();
+        let status_notifier = task::spawn(async move {
+            let status = child.status().await;
+            UnixStream::connect(socket_path).await.unwrap();
+            status
+        });
+
         while let Some(Ok(mut stream)) = incoming.next().await {
+            // Beginning of a new segment from ffmpeg
             read_buffer.clear();
             write_buffer.clear();
             self.segment_clock = self.clock_latest;
@@ -171,6 +184,9 @@ impl VideoIngest {
             // Get the entire segment for now, since TsPacketReader seems like it
             // will read a partial packet and lose data. To do: get a better parser?
             stream.read_to_end(&mut read_buffer).await?;
+            if read_buffer.is_empty() {
+                break;
+            }
             log::info!("segment is {} bytes", read_buffer.len());
 
             let mut ts_reader = TsPacketReader::new(Cursor::new(&mut read_buffer));
@@ -209,7 +225,7 @@ impl VideoIngest {
             self.send_player_periodically().await;
         }
 
-        let status = child.status().await?;
+        let status = status_notifier.await?;
         log::trace!("{:?}", status);
 
         if status.success() {

@@ -4,12 +4,18 @@ use crate::config;
 use async_std::os::unix::net::UnixListener;
 use std::error::Error;
 use std::fs::Permissions;
+use std::path::PathBuf;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 pub struct SocketPool {
     pub mount_args: Vec<String>,
     dir: TempDir,
+}
+
+pub struct Socket {
+    pub socket_path: PathBuf,
+    pub listener: UnixListener,
 }
 
 impl SocketPool {
@@ -22,10 +28,12 @@ impl SocketPool {
         })
     }
 
-    pub async fn bind(&mut self, path_in_container: &str) -> Result<UnixListener, Box<dyn Error>> {
+    pub async fn bind(&mut self, path_in_container: &str) -> Result<Socket, Box<dyn Error>> {
         let arbitrary_id = self.mount_args.len().to_string();
-        let path = self.dir.path().join(arbitrary_id);
-        self.mount_args.push(format!("-v={}:{}", path.to_str().unwrap(), path_in_container));
-        Ok(UnixListener::bind(path).await?)
+        let socket_path = self.dir.path().join(arbitrary_id);
+        let socket_path_str = socket_path.to_str().unwrap();
+        self.mount_args.push(format!("-v={}:{}", socket_path_str, path_in_container));
+        let listener = UnixListener::bind(&socket_path).await?;
+        Ok(Socket{ listener, socket_path })
     }
 }
