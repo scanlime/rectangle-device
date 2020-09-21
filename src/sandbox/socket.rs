@@ -2,8 +2,9 @@
 
 use async_std::stream::StreamExt;
 use async_std::sync::{Sender, channel};
-use async_std::os::unix::net::UnixListener;
+use async_std::os::unix::net::{UnixListener, Incoming};
 use async_std::task;
+use async_std::task::JoinHandle;
 use async_std::io::ReadExt;
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use mpeg2ts::time::ClockReference;
@@ -20,6 +21,7 @@ use crate::media::hls::HLSContainer;
 use crate::media::html::{HLSPlayer, HLSPlayerDist};
 use crate::sandbox::runtime;
 use crate::sandbox::types::{ImageDigest, SandboxError};
+use futures::future::BoxFuture;
 use std::process::{Command, Stdio};
 use std::error::Error;
 
@@ -27,48 +29,78 @@ const TEMP_PREFIX : &'static str = "rect-socket.";
 
 pub struct SocketPool {
     pub paths: Vec<PathBuf>,
-    listeners: Vec<UnixListener>,
+    servers: Vec<Server>,
     dir: TempDir,
+}
+
+struct Server {
+    task: JoinHandle<()>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PoolEvent {
+    id: usize,
+    bytes: usize
 }
 
 impl SocketPool {
     pub async fn new(size: usize) -> Result<SocketPool, Box<dyn Error>> {
 
         let dir = tempfile::Builder::new().prefix(TEMP_PREFIX).tempdir()?;
-        let paths: Vec<PathBuf> = (0..size).map(|n| dir.path().join(n.to_string()) ).collect();
 
-        let mut listeners = vec![];
+        let paths: Vec<PathBuf> = (0..size).map(|n| dir.path().join(n.to_string())).collect();
+
+        let mut servers: Vec<Server> = vec![];
         for path in &paths {
-            listeners.push(UnixListener::bind(path).await?);
+            servers.push(Server::new(path).await?);
         }
 
-        Ok(SocketPool {
-            dir, paths, listeners
+        Ok(SocketPool { dir, paths, servers })
+    }
+
+    pub async fn recv(&self) -> Option<PoolEvent> {
+
+        task::sleep(Duration::from_secs(1)).await;
+
+        Some(PoolEvent {
+            id: 1234,
+            bytes: 1234,
         })
     }
 }
 
-    /*
-    fn recv(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
-        async_std::task::block_on(self.recv_task())
+impl Server {
+    async fn new(path: &PathBuf) -> Result<Server, Box<dyn Error>> {
+        let listener = UnixListener::bind(path).await?;
+        let task = task::spawn(Server::task(listener));
+        Ok(Server { task })
     }
 
-    async fn recv_task(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
-        Ok(vec![])
+    async fn task(listener: UnixListener) {
+/*
+        let mut incoming = listener.incoming();
+
+        while let Some(Ok(stream)) = incoming.next().await {
+            println!("new stream");
+            let mut stream = stream;
+
+            let mut buf = [0 as u8; 1024*1024];
+            while let Ok(size) = stream.read(&mut buf).await {
+                println!("got {} bytes", size);
+            }
+
+            println!("end stream");
+        }
+*/
+        println!("hi from task");
+
     }
-        task::block_on(async {
-            for (id, listener) in socket_listeners.into_iter().enumerate() {
-                println!("{}", id);
-                task::spawn(async move {
-                    let mut incoming = listener.incoming();
-                    while let Some(stream) = incoming.next().await {
-                        if let Ok(mut stream) = stream {
+}
+
+
+/*
+
                             println!("{} accepting", id);
-
-                            let mut buf = [0; 1024*1024];
-                            while let Ok(size) = stream.read(&mut buf).await {
-                                println!("{} got {} bytes", id, size);
-                            }
                         }
                     }
                 });
@@ -77,13 +109,5 @@ impl SocketPool {
         for (id, listener) in socket_listeners.into_iter().enumerate() {
             let sender = packet_sender.clone();
             std::thread::spawn(move || ts_packet_pump(id, listener, sender));
-        }
-        fn ts_packet_pump(id: usize, listener: UnixListener, sender: Sender<(usize, TsPacket)>) {
-            for stream in listener.incoming() {
-                let mut reader = TsPacketReader::new(stream.unwrap());
-                while let Some(packet) = reader.read_ts_packet().unwrap() {
-                    task::block_on(sender.send((id, packet)));
-                };
-            }
         }
 */

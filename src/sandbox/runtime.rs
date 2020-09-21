@@ -8,7 +8,7 @@ pub fn command() -> Command {
     Command::new("podman")
 }
 
-pub fn is_downloaded(id: &ImageDigest) -> Result<bool, Box<dyn Error>> {
+pub fn image_exists(id: &ImageDigest) -> Result<bool, Box<dyn Error>> {
     let mut command = command();
     Ok(command
         .arg("image").arg("exists")
@@ -16,7 +16,7 @@ pub fn is_downloaded(id: &ImageDigest) -> Result<bool, Box<dyn Error>> {
         .status()?.success())
 }
 
-pub fn download(id: &ImageDigest) -> Result<(), Box<dyn Error>> {
+pub fn pull(id: &ImageDigest) -> Result<(), Box<dyn Error>> {
     let mut command = command();
     let digest = String::from_utf8(
         command

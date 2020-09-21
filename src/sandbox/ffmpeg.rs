@@ -20,8 +20,8 @@ pub struct TranscodeConfig {
 
 pub fn start(tc: TranscodeConfig, output: &SocketPool) -> Result<Child, Box<dyn Error>> {
 
-    if !runtime::is_downloaded(&tc.image)? {
-        runtime::download(&tc.image)?;
+    if !runtime::image_exists(&tc.image)? {
+        runtime::pull(&tc.image)?;
     }
 
     // Be specific about sandbox options

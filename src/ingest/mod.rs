@@ -52,6 +52,12 @@ impl VideoIngest {
 
         let child = ffmpeg::start(tc, &output).unwrap();
 
+        task::block_on(async {
+            while let Some(event) = output.recv().await {
+                println!("{:?}", event);
+            }
+        });
+
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
         let mut cursor = Cursor::new(&mut segment_buffer[..]);
         let mut container = MediaContainer { blocks: vec![] };
@@ -66,7 +72,18 @@ impl VideoIngest {
         task::block_on(async {
             self.hls_dist.clone().send(&self.block_sender).await;
         });
+
 /*
+
+fn ts_packet_pump(id: usize, listener: UnixListener, sender: Sender<(usize, TsPacket)>) {
+    for stream in listener.incoming() {
+        let mut reader = TsPacketReader::new(stream.unwrap());
+        while let Some(packet) = reader.read_ts_packet().unwrap() {
+            task::block_on(sender.send((id, packet)));
+        };
+    }
+}
+
         while let Some(packet) = Some(TsPacket::new()) {
 
             // Save a copy of the PAT (Program Association Table) and reinsert it at every segment
