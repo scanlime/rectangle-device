@@ -37,10 +37,6 @@ pub async fn start(tc: TranscodeConfig, pool: &SocketPool) -> Result<Child, Box<
         .arg("--detach=false")
         .arg("--privileged=false");
 
-    // If we are intentionally ingesting data from the network, this will use slirp (a usermode
-    // tcp/ip emulator) to perform network access from usermode. Access to localhost is restricted,
-    // but any other hosts are allowed. If networking is off, the sandbox has no network at all.
-
     if tc.allow_networking {
         command
             .arg("--net=slirp4netns")
