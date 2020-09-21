@@ -55,7 +55,22 @@ impl VideoIngest {
         let child = ffmpeg::start(tc, &pool).unwrap();
 
         task::block_on(async {
+            let mut incoming = output.incoming();
 
+            while let Some(Ok(stream)) = incoming.next().await {
+                println!("new stream");
+                let mut stream = stream;
+
+                let mut buf = vec![0 as u8; 1024*1024];
+                while let Ok(size) = stream.read(&mut buf).await {
+                    println!("got {} bytes", size);
+                    if size == 0 {
+                        break;
+                    }
+                }
+
+                println!("end stream");
+            }
         });
 
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
@@ -73,35 +88,6 @@ impl VideoIngest {
             self.hls_dist.clone().send(&self.block_sender).await;
         });
 
-
-        /*
-        impl Server {
-            async fn new(path: &PathBuf) -> Result<Server, Box<dyn Error>> {
-                let path = path.to_owned();
-                let task = task::spawn(Server::task(path, listener));
-                Ok(Server { task })
-            }
-
-            async fn task(path: PathBuf, listener: UnixListener) {
-                let mut incoming = listener.incoming();
-
-                while let Some(Ok(stream)) = incoming.next().await {
-                    println!("new stream");
-                    let mut stream = stream;
-
-                    let mut buf = vec![0 as u8; 1024*1024];
-                    while let Ok(size) = stream.read(&mut buf).await {
-                        println!("{:?} got {} bytes", path, size);
-                        if size == 0 {
-                            break;
-                        }
-                    }
-
-                    println!("end stream");
-                }
-            }
-        }
-        */
 
 /*
 
