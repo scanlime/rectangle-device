@@ -203,7 +203,7 @@ impl P2PVideoNode {
         let local_peer_id = PeerId::from(local_key.public());
         log::info!("local identity is {}", local_peer_id.to_string());
 
-        let gossipsub_topic = gossipsub::Topic::new("rectangle-net".into());
+        let gossipsub_topic = gossipsub::Topic::new(config::GOSSIPSUB_TOPIC.into());
         let transport = libp2p::build_development_transport(local_key.clone())?;
         let mut kad_config : KademliaConfig = Default::default();
         const KAD_LAN : &[u8] = b"/ipfs/lan/kad/1.0.0";
@@ -216,7 +216,7 @@ impl P2PVideoNode {
             ),
             identify: Identify::new(
                 "/ipfs/0.1.0".into(),
-                "rectangle-device".into(),
+                config::NETWORK_IDENTITY.into(),
                 local_key.public(),
             ),
             ping: Ping::new(PingConfig::new()),

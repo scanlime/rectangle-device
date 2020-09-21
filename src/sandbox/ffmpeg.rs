@@ -18,7 +18,7 @@ pub struct TranscodeConfig {
     pub segment_time: f32,
 }
 
-pub fn start(tc: TranscodeConfig, output: &SocketPool) -> Result<Child, Box<dyn Error>> {
+pub fn start(tc: TranscodeConfig, pool: &SocketPool) -> Result<Child, Box<dyn Error>> {
 
     if !runtime::image_exists(&tc.image)? {
         runtime::pull(&tc.image)?;
@@ -48,16 +48,8 @@ pub fn start(tc: TranscodeConfig, output: &SocketPool) -> Result<Child, Box<dyn 
         command.arg("--net=none");
     }
 
-    // Mount each unix socket in our output pool from its host-side temp path into
-    // a convenient and terse location within the container.
-    // ffmpeg will care about the extension of this "file", it must match the segment
-    // type expected. (Hard-coded for now. Don't allow arbitrary strings here though.)
-
-    for (id, path) in output.paths.iter().enumerate() {
-        command.arg(format!("-v={}:/out/{}.ts", path.to_str().unwrap(), id));
-    }
-
     command
+        .args(&pool.mount_args)
         .arg(tc.image.digest.as_str())
         .args(tc.args);
 
@@ -69,7 +61,7 @@ pub fn start(tc: TranscodeConfig, output: &SocketPool) -> Result<Child, Box<dyn 
         .arg("-loglevel").arg("error")
         .arg("-f").arg("stream_segment")
         .arg("-segment_format").arg("mpegts")
-        .arg("-segment_wrap").arg((1 + output.paths.len()).to_string())
+        .arg("-segment_wrap").arg("1")
         .arg("-segment_time").arg(tc.segment_time.to_string())
         .arg("unix:///out/%d.ts");
 

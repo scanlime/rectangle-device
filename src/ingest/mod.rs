@@ -46,16 +46,16 @@ impl VideoIngest {
             segment_time: config::SEGMENT_MIN_SEC,
         };
 
-        let output = task::block_on(async {
-            SocketPool::new(3).await.unwrap()
+        let (pool, output) = task::block_on(async {
+            let mut pool = SocketPool::new().unwrap();
+            let output = pool.bind("/out/0.ts").await.unwrap();
+            (pool, output)
         });
 
-        let child = ffmpeg::start(tc, &output).unwrap();
+        let child = ffmpeg::start(tc, &pool).unwrap();
 
         task::block_on(async {
-            while let Some(event) = output.recv().await {
-                println!("{:?}", event);
-            }
+
         });
 
         let mut segment_buffer = [0 as u8; config::SEGMENT_MAX_BYTES];
@@ -72,6 +72,36 @@ impl VideoIngest {
         task::block_on(async {
             self.hls_dist.clone().send(&self.block_sender).await;
         });
+
+
+        /*
+        impl Server {
+            async fn new(path: &PathBuf) -> Result<Server, Box<dyn Error>> {
+                let path = path.to_owned();
+                let task = task::spawn(Server::task(path, listener));
+                Ok(Server { task })
+            }
+
+            async fn task(path: PathBuf, listener: UnixListener) {
+                let mut incoming = listener.incoming();
+
+                while let Some(Ok(stream)) = incoming.next().await {
+                    println!("new stream");
+                    let mut stream = stream;
+
+                    let mut buf = vec![0 as u8; 1024*1024];
+                    while let Ok(size) = stream.read(&mut buf).await {
+                        println!("{:?} got {} bytes", path, size);
+                        if size == 0 {
+                            break;
+                        }
+                    }
+
+                    println!("end stream");
+                }
+            }
+        }
+        */
 
 /*
 

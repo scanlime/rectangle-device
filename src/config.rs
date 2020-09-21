@@ -50,7 +50,7 @@ pub const IPFS_PINNING_NAME : &'static str = "Experimental video stream from rec
 pub const FFMPEG_CONTAINER_NAME : &'static str = "docker.io/jrottenberg/ffmpeg:4.3.1-scratch38";
 pub const FFMPEG_CONTAINER_HASH : &'static str = "68126e39534eff79a8a4a4b7b546a11b8165a1ee8f1af93166d3071b170280a1";
 
-// Settings
+// Video settings
 pub const HLS_FILENAME : &'static str = "index.m3u8";
 pub const JS_FILENAME : &'static str = "main.js";
 pub const HLS_DIRECTORY : &'static str = "video";
@@ -59,3 +59,8 @@ pub const SEGMENT_MAX_BYTES : usize = 1024*1024;
 pub const SEGMENT_MIN_SEC : f32 = 2.0;
 pub const SEGMENT_MAX_SEC : f32 = 5.0;
 pub const PUBLISH_INTERVAL_SEC : u64 = 30;
+
+pub const GOSSIPSUB_TOPIC : &'static str = "rectangle-net";
+pub const NETWORK_IDENTITY : &'static str = "rectangle-device";
+pub const TEMP_DIR_PREFIX: &'static str = "rect-socket.";
+pub const TEMP_DIR_MODE: u32 = 0o700;
