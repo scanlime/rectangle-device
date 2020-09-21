@@ -1,7 +1,7 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use std::error::Error;
-use std::process::{Stdio, Child};
+use async_process::{Stdio, Child};
 use crate::config;
 use crate::sandbox::runtime;
 use crate::sandbox::socket::SocketPool;
@@ -19,10 +19,10 @@ pub struct TranscodeConfig {
     pub segment_time: f32,
 }
 
-pub fn start(tc: TranscodeConfig, pool: &SocketPool) -> Result<Child, Box<dyn Error>> {
+pub async fn start(tc: TranscodeConfig, pool: &SocketPool) -> Result<Child, Box<dyn Error>> {
 
-    if !runtime::image_exists(&tc.image)? {
-        runtime::pull(&tc.image)?;
+    if !runtime::image_exists(&tc.image).await? {
+        runtime::pull(&tc.image).await?;
     }
 
     // Be specific about sandbox options

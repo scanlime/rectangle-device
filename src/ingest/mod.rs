@@ -158,7 +158,7 @@ impl VideoIngest {
         let output = pool.bind("/out/0.ts").await?;
         let mut incoming = output.incoming();
 
-        let mut child = ffmpeg::start(tc, &pool)?;
+        let mut child = ffmpeg::start(tc, &pool).await?;
 
         let mut read_buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
         let mut write_buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
@@ -209,7 +209,7 @@ impl VideoIngest {
             self.send_player_periodically().await;
         }
 
-        let status = child.wait()?;
+        let status = child.status().await?;
         log::trace!("{:?}", status);
 
         if status.success() {
