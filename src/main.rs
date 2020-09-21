@@ -12,6 +12,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rectangle_device=info")).init();
     let video_args : Vec<String> = std::env::args().skip(1).collect();
 
+    // Increase the file limit if we can, the p2p networking uses a ton of sockets
+    file_limit::set_to_max()?;
+
     let (block_sender, block_receiver) = channel(64);
     let (pin_sender, pin_receiver) = channel(128);
 

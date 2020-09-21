@@ -816,6 +816,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c85295147490b8fcf2ea3d104080a105a8b2c63f9c319e82c02d8e952388919"
 
 [[package]]
+name = "file_limit"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320a289635eb305531029234eda5146344fa9dbbb852b63667ae9d6f1edfe277"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "fixedbitset"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2643,6 +2652,7 @@ version = "0.1.0"
 dependencies = [
  "async-std",
  "env_logger",
+ "file_limit",
  "futures",
  "lazy_static",
  "leb128",

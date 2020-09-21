@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 async-std = { version = "1.6.0", features = ["unstable"] }
 env_logger = "0.7.1"
+file_limit = "0.0.2"
 futures = "0.3.1"
 lazy_static = "1.4.0"
 leb128 = "0.2.4"
