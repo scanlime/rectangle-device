@@ -21,15 +21,15 @@ notes & junk
 ............
 
 Big questions to answer:
-- how does this interact with transcoding
-- when can this server decide to discard blocks
-- how do we represent instructions for transforming discardable blocks (docker compatible images?)
-
-Need more tooling to debug this effectively. Are there libp2p dissector tools? Detailed tracing with timestamps?
+- how does this interact with transcoding? seems like block transcoding is basically okay but we probably need to include a backtrack by one segment in the stream to be sure we get enough data to decode a complete frame. tempting to dive into h264 here but it would be great to avoid getting too low-level to make it easier to support new codecs.
+- when can this server decide to discard blocks? combination of block usage info + which (trusted?) peers have requested it + timestamps
+- how do we represent instructions for transforming discardable blocks? using containers and podman for this seems to be going well so far. how do transformations from URIs vs block-oriented sources work? want to keep the transcoding/splitting ffmpeg containers and the downloading ffmpeg/youtube-dl containers totally separate.
+- get more specific about how this supports dash, additional codecs, additional formats that we present over http/whatever for federation/compatibility
 
 Just code:
-- segmentation right now is not okay
-- templating for html
+- tools to debug bandwidth and timing in libp2p and bitswap
 - js frontend updates live stream using pubsub
+- fix player bugs with mpegts-level blocks in playlists
 - use hashes in m3u playlist to remove a layer of indirection
 - add some api parts and try multiple streams, starting/stopping them dynamically
+
