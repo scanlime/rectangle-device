@@ -57,7 +57,6 @@ pub const FFMPEG_CONTAINER_HASH : &'static str = "68126e39534eff79a8a4a4b7b546a1
 pub const HLS_FILENAME : &'static str = "index.m3u8";
 pub const JS_FILENAME : &'static str = "main.js";
 pub const HLS_DIRECTORY : &'static str = "video";
-pub const SEGMENT_MIN_BYTES : usize = 64*1024;
 pub const SEGMENT_MAX_BYTES : usize = 1024*1024;
 pub const SEGMENT_MIN_SEC : f32 = 2.0;
 pub const SEGMENT_MAX_SEC : f32 = 5.0;

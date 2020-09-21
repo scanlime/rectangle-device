@@ -1,19 +1,15 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use async_std::stream::StreamExt;
-use async_std::sync::{Sender, channel};
-use async_std::os::unix::net::UnixListener;
-use async_std::io::BufReader;
+use async_std::sync::Sender;
 use async_std::task;
 use async_std::io::ReadExt;
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use mpeg2ts::time::ClockReference;
 use std::error::Error;
 use std::io::Cursor;
-use std::process::{Command, Stdio, Child, ExitStatus};
+use std::process::ExitStatus;
 use std::time::{Duration, Instant};
-use std::path::PathBuf;
-use tempfile::TempDir;
 use thiserror::Error;
 use libp2p::PeerId;
 use libipld::Cid;
@@ -28,9 +24,14 @@ use crate::sandbox::socket::SocketPool;
 pub struct VideoIngest {
     block_sender: Sender<BlockInfo>,
     pin_sender: Sender<Cid>,
-    hls_dist: HLSPlayerDist,
     local_peer_id: PeerId,
+
+    hls_dist: HLSPlayerDist,
     mc: MediaContainer,
+
+    publish_interval: Duration,
+    next_publish_at: Instant,
+
     clock_latest: Option<ClockReference>,
     clock_first: Option<ClockReference>,
     segment_clock: Option<ClockReference>,
@@ -46,12 +47,17 @@ pub enum VideoIngestError {
 impl VideoIngest {
     pub fn new(block_sender: Sender<BlockInfo>, pin_sender: Sender<Cid>, local_peer_id: PeerId) -> VideoIngest {
         let hls_dist = HLSPlayerDist::new();
+        let publish_interval = Duration::from_secs(config::PUBLISH_INTERVAL_SEC);
+        let next_publish_at = Instant::now() + publish_interval;
+        let mc = MediaContainer { blocks: vec![] };
         VideoIngest {
+            mc,
             block_sender,
             pin_sender,
             hls_dist,
             local_peer_id,
-            mc: MediaContainer { blocks: vec![] },
+            next_publish_at,
+            publish_interval,
             clock_latest: None,
             clock_first: None,
             segment_clock: None,
@@ -85,6 +91,8 @@ impl VideoIngest {
     }
 
     async fn push_video_block(&mut self, data: &[u8], duration: f32) {
+        log::info!("block is {} bytes, {} seconds", data.len(), duration);
+
         // This is where the hash computation happens
         let file = RawFileBlock::new(data);
 
@@ -99,8 +107,16 @@ impl VideoIngest {
         let usage = BlockUsage::VideoSegment(sequence);
         self.mc.blocks.push(info);
 
-        log::trace!("video segment {}", sequence);
+        log::trace!("sending {} {:?}", file.block.cid.to_string(), usage);
         file.send(&self.block_sender, usage).await;
+    }
+
+    async fn send_player_periodically(&mut self) {
+        let now = Instant::now();
+        if now > self.next_publish_at {
+            self.next_publish_at = now + self.publish_interval;
+            self.send_player().await;
+        }
     }
 
     fn inspect_packet(&mut self, packet: &TsPacket) {
@@ -123,7 +139,7 @@ impl VideoIngest {
     }
 
     fn segment_clock_as_u64(&self) -> u64 {
-        self.clock_latest.or(self.clock_first).map_or(0, |c| c.as_u64())
+        self.segment_clock.or(self.clock_first).map_or(0, |c| c.as_u64())
     }
 
     fn latest_segment_duration(&self) -> f32 {
@@ -144,64 +160,64 @@ impl VideoIngest {
 
         let mut child = ffmpeg::start(tc, &pool)?;
 
-        let mut buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
-        let mut next_publish_at = Instant::now() + Duration::from_secs(config::PUBLISH_INTERVAL_SEC);
+        let mut read_buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
+        let mut write_buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
 
         while let Some(Ok(mut stream)) = incoming.next().await {
-            assert!(buffer.is_empty());
+            read_buffer.clear();
+            write_buffer.clear();
+            self.segment_clock = self.clock_latest;
 
             // Get the entire segment for now, since TsPacketReader seems like it
             // will read a partial packet and lose data. To do: get a better parser?
-            stream.read_to_end(&mut buffer).await;
-            log::info!("segment is {} bytes", buffer.len());
+            stream.read_to_end(&mut read_buffer).await?;
+            log::info!("segment is {} bytes", read_buffer.len());
 
-            // Scan packets for timestamps and the PID association
-            let mut ts_reader = TsPacketReader::new(Cursor::new(&mut buffer));
+            let mut ts_reader = TsPacketReader::new(Cursor::new(&mut read_buffer));
+            let mut write_cursor = Cursor::new(&mut write_buffer);
+
             while let Ok(Some(packet)) = ts_reader.read_ts_packet() {
+                let write_position = write_cursor.position() as usize;
+                let duration_before_packet = self.latest_segment_duration();
                 self.inspect_packet(&packet);
+
+                // Split this segment into smaller blocks when we need to
+                if write_position + TsPacket::SIZE > config::SEGMENT_MAX_BYTES ||
+                    self.latest_segment_duration() >= config::SEGMENT_MAX_SEC {
+
+                    // Generate a block which ends just before 'packet'
+                    self.push_video_block(
+                        &write_cursor.get_ref()[0..write_position],
+                        duration_before_packet).await;
+
+                    write_cursor.set_position(0);
+                    write_cursor.get_mut().clear();
+
+                    if let Some(pat) = &self.program_association_table {
+                        TsPacketWriter::new(&mut write_cursor).write_ts_packet(pat)?;
+                    }
+                    self.segment_clock = self.clock_latest;
+                }
+
+                TsPacketWriter::new(&mut write_cursor).write_ts_packet(&packet)?;
             }
 
-            // If the segment is already small enough this is good, store it
-            let now = Instant::now();
-            if now > next_publish_at {
-                next_publish_at = now + Duration::from_secs(config::PUBLISH_INTERVAL_SEC);
-                task::block_on(self.send_player());
-            }
+            self.push_video_block(
+                write_cursor.into_inner(),
+                self.latest_segment_duration()).await;
+
+            self.send_player_periodically().await;
         }
 
         let status = child.wait()?;
+        log::trace!("{:?}", status);
+
         if status.success() {
             log::warn!("ingest stream ended successfully, final player");
-            task::block_on(async { self.send_player().await });
+            self.send_player().await;
             Ok(self.mc)
         } else {
             Err(Box::new(VideoIngestError::ProcessFailed(status)))
         }
     }
 }
-
-
-/*
-
-
-            // Split on keyframes, but respect our hard limits on time and size
-            if (is_keyframe && segment_bytes >= config::SEGMENT_MIN_BYTES && segment_sec >= config::SEGMENT_MIN_SEC) ||
-               (segment_bytes + TsPacket::SIZE > config::SEGMENT_MAX_BYTES) ||
-               (segment_sec >= config::SEGMENT_MAX_SEC) {
-
-                cursor.set_position(0);
-                let segment = cursor.get_ref().get(0..segment_bytes).unwrap();
-----
-
-                // Each segment starts with a PAT so the other packets can be identified
-                if let Some(pat) = &program_association_table {
-                    TsPacketWriter::new(&mut cursor).write_ts_packet(pat).unwrap();
-                }
-
-                // This 'packet' will be the first in a new segment after the PAT
-                segment_clock = clock_latest;
-            }
-
-            TsPacketWriter::new(&mut cursor).write_ts_packet(&packet).unwrap();
-        }
-        */
