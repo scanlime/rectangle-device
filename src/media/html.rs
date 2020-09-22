@@ -53,11 +53,12 @@ pub struct HLSPlayer {
 
 impl HLSPlayer {
     pub fn from_hls(hls: &HLSContainer, dist: &HLSPlayerDist, local_peer_id: &PeerId) -> HLSPlayer {
-        let hls_link = hls.directory.link(config::HLS_DIRECTORY.to_string());
-        let mut added_links = hls.directory.links.clone();
-        added_links.append(&mut dist.links.clone());
-        let script_cid = &dist.script.root.cid;
-        HLSPlayer::from_link(&hls_link, script_cid, &added_links, hls.sequence, local_peer_id)
+        HLSPlayer::from_link(
+            &hls.directory.link(config::HLS_DIRECTORY.to_string()),
+            &dist.script.root.cid,
+            &dist.links,
+            hls.sequence,
+            local_peer_id)
     }
 
     pub fn from_link(hls_link: &Link, script_cid: &Cid, added_links: &Vec<Link>,
