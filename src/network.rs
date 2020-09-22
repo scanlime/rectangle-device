@@ -72,7 +72,7 @@ pub struct P2PVideoBehaviour {
     #[behaviour(ignore)]
     peer_id: PeerId,
     #[behaviour(ignore)]
-    block_receiver: Receiver<BlockInfo>,
+    block_receiver: Option<Receiver<BlockInfo>>,
     #[behaviour(ignore)]
     block_store: BTreeMap<Vec<u8>, BlockInfo>,
     #[behaviour(ignore)]
@@ -233,7 +233,7 @@ impl P2PVideoNode {
             peer_id: local_peer_id.clone(),
             block_store: BTreeMap::new(),
             blocks_to_send: BTreeSet::new(),
-            block_receiver,
+            block_receiver: Some(block_receiver),
         };
 
         behaviour.add_router_address(&config::IPFS_ROUTER_ID.parse().unwrap(), config::IPFS_ROUTER_ADDR_TCP.parse().unwrap());
@@ -299,12 +299,18 @@ impl Future for P2PVideoNode {
             }
         }
 
-        // At most one stored block per wakeup for now, to keep network from getting overwhelmed
-        match Pin::new(&mut self.swarm.block_receiver).poll_next(ctx) {
-            Poll::Pending => {},
-            Poll::Ready(None) => return Poll::Ready(()),
-            Poll::Ready(Some(block_info)) => self.store_block(block_info)
-        }
+        // At most one stored block per wakeup for now, to keep network from getting overwhelmed.
+        self.swarm.block_receiver = match self.swarm.block_receiver.take() {
+            None => None,
+            Some(mut block_receiver) => match Pin::new(&mut block_receiver).poll_next(ctx) {
+                Poll::Pending => Some(block_receiver),
+                Poll::Ready(None) => None,
+                Poll::Ready(Some(block_info)) => {
+                    self.store_block(block_info);
+                    Some(block_receiver)
+                }
+            }
+        };
 
         // Poll network until it's fully blocked on I/O
         loop {
