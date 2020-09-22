@@ -39,5 +39,8 @@ Just code:
 - js frontend updates live stream using pubsub
 - fix player bugs with mpegts-level blocks in playlists
 - use hashes in m3u playlist to remove a layer of indirection
+  - would be great to do this via a new comment/tag in m3u while retaining the current filenames and directory structure, so the video is still playable if you download it off ipfs or view it through a gateway. using ipfs URIs directly in the playlist, for example, seems correct but would be useless in practice.
+  - also think about, in the same m3u8 extension, indicating which segments contain keyframes. is there already a way to do this?
 - add some api parts and try multiple streams, starting/stopping them dynamically
+- stop even trying to parse mpegts, let the sandboxed ffmpeg do all our media splitting
 
