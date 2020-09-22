@@ -19,6 +19,8 @@ Runtime dependencies:
 notes & junk
 ------------
 
+randomly, the latest of late night shower thoughts... instead of adding hashes to the m3u8 (Adding redundancy, adding format-specific deps, etc) let's focus on making the playlist itself a better ipfs citizen. ideally the common and simple case of playlists under 1MB should be representable as a single block with both a directory node and a file node in it, and whatever other metadata we want later included in additional files. this could separate concerns between the definition of the segments, their location on ipfs or https or otherwise, and any strategies we have for re-generating blocks.
+
 ```
 ffmpeg -safe 0 -protocol_whitelist file,concat,unix -f concat -i <(for i in {1..1000}; do echo file concat:`pwd`/s00001.ts\|`pwd`/s00002.ts; done) -c copy ~/out.mkv
 ```
