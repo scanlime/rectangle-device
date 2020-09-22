@@ -299,18 +299,31 @@ impl Future for P2PVideoNode {
             }
         }
 
-        // At most one stored block per wakeup for now, to keep network from getting overwhelmed.
-        self.swarm.block_receiver = match self.swarm.block_receiver.take() {
-            None => None,
-            Some(mut block_receiver) => match Pin::new(&mut block_receiver).poll_next(ctx) {
-                Poll::Pending => Some(block_receiver),
-                Poll::Ready(None) => None,
-                Poll::Ready(Some(block_info)) => {
-                    self.store_block(block_info);
-                    Some(block_receiver)
+        // Fully drain the block_receiver, store_block() should be fast
+        loop {
+            match self.swarm.block_receiver.take() {
+                None => {
+                    break;
+                },
+                Some(mut block_receiver) => {
+                    let block_event = Pin::new(&mut block_receiver).poll_next(ctx);
+                    match block_event {
+                        Poll::Pending => {
+                            self.swarm.block_receiver = Some(block_receiver);
+                            break;
+                        },
+                        Poll::Ready(None) => {
+                            drop(block_receiver);
+                            break;
+                        },
+                        Poll::Ready(Some(block_info)) => {
+                            self.swarm.block_receiver = Some(block_receiver);
+                            self.store_block(block_info);
+                        }
+                    }
                 }
             }
-        };
+        }
 
         // Poll network until it's fully blocked on I/O
         loop {
