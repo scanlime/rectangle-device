@@ -50,6 +50,10 @@ pub const IPFS_PINNING_NAME : &'static str = "Experimental video stream from rec
 // Video transcoder image to use. This should be replaced with a locally preferred image
 // as well as a list of acceptable images that we'll be happy to run if we are trying to
 // reproduce a particular video block which requests it.
+// Also see: https://ffmpeg.org/security.html
+// Seems we want a combination of approaches, using a very restrictive sandbox plus
+// whitelisting versions of ffmpeg. As a result, videos that were uploaded using older
+// versions of ffmpeg may not find servers willing to re-run those transcodes if needed.
 pub const FFMPEG_CONTAINER_NAME : &'static str = "docker.io/jrottenberg/ffmpeg:4.3.1-scratch38";
 pub const FFMPEG_CONTAINER_HASH : &'static str = "68126e39534eff79a8a4a4b7b546a11b8165a1ee8f1af93166d3071b170280a1";
 
