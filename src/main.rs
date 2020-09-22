@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Increase the file limit if we can, the p2p networking uses a ton of sockets
     file_limit::set_to_max()?;
 
-    let (block_sender, block_receiver) = channel(64);
+    let (block_sender, block_receiver) = channel(16);
     let (pin_sender, pin_receiver) = channel(128);
 
     let warmer = warmer::Warmer::new();
