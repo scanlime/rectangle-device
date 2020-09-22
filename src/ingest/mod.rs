@@ -5,13 +5,12 @@ use async_std::os::unix::net::UnixStream;
 use async_std::stream::StreamExt;
 use async_std::sync::Sender;
 use async_std::task;
-use crate::blocks::{BlockUsage, BlockInfo, RawFileBlock};
+use rectangle_device_blocks::{BlockUsage, BlockInfo, RawFileBlock, BLOCK_MAX_BYTES};
+use rectangle_device_sandbox::{ffmpeg, socket::SocketPool};
 use crate::config;
 use crate::media::{MediaBlockInfo, MediaContainer};
 use crate::media::hls::HLSContainer;
 use crate::media::html::{HLSPlayer, HLSPlayerDist};
-use crate::sandbox::ffmpeg;
-use crate::sandbox::socket::SocketPool;
 use libipld::Cid;
 use libp2p::PeerId;
 use mpeg2ts::time::ClockReference;
@@ -163,8 +162,8 @@ impl VideoIngest {
 
         let mut child = ffmpeg::start(tc, &pool).await?;
 
-        let mut read_buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
-        let mut write_buffer = Vec::with_capacity(config::SEGMENT_MAX_BYTES);
+        let mut read_buffer = Vec::with_capacity(BLOCK_MAX_BYTES);
+        let mut write_buffer = Vec::with_capacity(BLOCK_MAX_BYTES);
 
         // Asynchronously set up a way to break out of the incoming connection
         // loop when the child process exits, by sending a zero length segment
@@ -198,7 +197,7 @@ impl VideoIngest {
                 self.inspect_packet(&packet);
 
                 // Split this segment into smaller blocks when we need to
-                if write_position + TsPacket::SIZE > config::SEGMENT_MAX_BYTES ||
+                if write_position + TsPacket::SIZE > BLOCK_MAX_BYTES ||
                     self.latest_segment_duration() >= config::SEGMENT_MAX_SEC {
 
                     // Generate a block which ends just before 'packet'

@@ -1,7 +1,7 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use libipld::Ipld;
-use crate::blocks::dag;
+use crate::dag;
 
 // Protocol buffer tags
 const PBTAG_TYPE: u8 = 8;

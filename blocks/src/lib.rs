@@ -10,7 +10,10 @@ use libipld::codec_impl::Multicodec;
 use libipld::pb::DagPbCodec;
 use libipld::multihash::{Multihash, SHA2_256};
 use async_std::sync::Sender;
-use crate::config::SEGMENT_MAX_BYTES;
+
+// This is an architectural limit in IPFS, chosen to limit the amount of memory
+// needed by bitswap to buffer not-yet-verified data from peers.
+pub const BLOCK_MAX_BYTES : usize = 1024 * 1024;
 
 #[derive(Debug, Ord, PartialOrd, PartialEq, Eq, Clone)]
 pub enum BlockUsage {
@@ -57,7 +60,7 @@ impl MultiBlockFile {
         let mut sizes = vec![];
         let mut ipld = vec![];
 
-        for chunk in bytes.chunks(SEGMENT_MAX_BYTES) {
+        for chunk in bytes.chunks(BLOCK_MAX_BYTES) {
             let part = RawFileBlock::new(chunk);
             let link = part.link("".to_string());
             total_size += link.size;

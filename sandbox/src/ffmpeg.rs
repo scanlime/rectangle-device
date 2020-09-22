@@ -2,13 +2,23 @@
 
 use std::error::Error;
 use async_process::{Stdio, Child};
-use crate::config;
-use crate::sandbox::runtime;
-use crate::sandbox::socket::SocketPool;
-use crate::sandbox::types::ImageDigest;
+use crate::runtime;
+use crate::socket::SocketPool;
+use crate::types::ImageDigest;
 
 pub fn default_image() -> ImageDigest {
-    ImageDigest::parse(config::FFMPEG_CONTAINER_NAME, config::FFMPEG_CONTAINER_HASH).unwrap()
+    // Video transcoder image to use. This should be replaced with a locally preferred image
+    // as well as a list of acceptable images that we'll be happy to run if we are trying to
+    // reproduce a particular video block which requests it.
+    // Also see: https://ffmpeg.org/security.html
+    // Seems we want a combination of approaches, using a very restrictive sandbox plus
+    // whitelisting versions of ffmpeg. As a result, videos that were uploaded using older
+    // versions of ffmpeg may not find servers willing to re-run those transcodes if needed.
+
+    ImageDigest::parse(
+        "docker.io/jrottenberg/ffmpeg:4.3.1-scratch38",
+        "68126e39534eff79a8a4a4b7b546a11b8165a1ee8f1af93166d3071b170280a1"
+    ).unwrap()
 }
 
 #[derive(Clone, Debug)]

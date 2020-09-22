@@ -1,11 +1,11 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use crate::config;
-use crate::blocks::{BlockInfo, BlockUsage, DirectoryBlock, Link, RawFileBlock, MultiBlockFile};
 use crate::media::hls::HLSContainer;
 use libipld::cid::Cid;
 use libp2p::PeerId;
 use async_std::sync::Sender;
+use rectangle_device_blocks::{BlockInfo, BlockUsage, DirectoryBlock, Link, RawFileBlock, MultiBlockFile};
 use rectangle_device_player::{IndexTemplate, Template, main_js};
 
 fn index_html_template(hls_cid: &Cid, script_cid: &Cid, local_peer_id: &PeerId) -> String {

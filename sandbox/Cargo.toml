@@ -1,0 +1,14 @@
+[package]
+name = "rectangle-device-sandbox"
+version = "0.1.0"
+authors = ["Micah Elizabeth Scott <micah@scanlime.org>"]
+edition = "2018"
+
+[dependencies]
+async-process = "1.0.0"
+async-std = { version = "1.6.0", features = ["unstable"] }
+lazy_static = "1.4.0"
+log = "0.4.11"
+tempfile = "3.1.0"
+thiserror = "1.0"
+regex = "1.3.9"

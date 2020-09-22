@@ -2,7 +2,7 @@
 
 use crate::config;
 use crate::media::MediaContainer;
-use crate::blocks::{BlockInfo, BlockUsage, DirectoryBlock, Link, RawFileBlock};
+use rectangle_device_blocks::{BlockInfo, BlockUsage, DirectoryBlock, Link, RawFileBlock};
 use m3u8_rs::playlist::{MediaPlaylist, MediaSegment, MediaPlaylistType};
 use async_std::sync::Sender;
 

@@ -1,0 +1,12 @@
+[package]
+name = "rectangle-device-blocks"
+version = "0.1.0"
+authors = ["Micah Elizabeth Scott <micah@scanlime.org>"]
+edition = "2018"
+
+[dependencies]
+async-std = { version = "1.6.0", features = ["unstable"] }
+log = "0.4.11"
+libipld = "0.4.0"
+leb128 = "0.2.4"
+prost = "0.6.1"

@@ -2672,28 +2672,34 @@ dependencies = [
 name = "rectangle-device"
 version = "0.1.0"
 dependencies = [
- "async-process",
  "async-std",
  "env_logger",
  "file_limit",
  "futures",
- "lazy_static",
- "leb128",
  "libipld",
  "libp2p",
  "libp2p-bitswap",
  "log",
  "m3u8-rs",
  "mpeg2ts",
- "prost",
- "rand 0.7.3",
+ "rectangle-device-blocks",
  "rectangle-device-player",
- "regex",
+ "rectangle-device-sandbox",
  "reqwest",
  "serde",
- "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "rectangle-device-blocks"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "leb128",
+ "libipld",
+ "log",
+ "prost",
 ]
 
 [[package]]
@@ -2702,6 +2708,19 @@ version = "0.1.0"
 dependencies = [
  "askama",
  "build-deps",
+]
+
+[[package]]
+name = "rectangle-device-sandbox"
+version = "0.1.0"
+dependencies = [
+ "async-process",
+ "async-std",
+ "lazy_static",
+ "log",
+ "regex",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
