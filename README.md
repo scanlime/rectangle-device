@@ -34,11 +34,11 @@ ffmpeg -safe 0 -protocol_whitelist file,concat,unix -f concat -i <(for i in {1..
   - a way to pool them for many requests.. send separate files/segments through a single ffmpeg process and single container instance
   - durable and secure way to represent a specific tool and configuration
   - inputs: configured for either URL (with network enabled) or concat socket thing (with network disabled)
-  - outputs: raw ipfs segments (the current focus), unixfs-based segments (for compatibility with large segments, with peertube-style hls, and for concatenating segments into single files for downloads or compatibility. 
+  - outputs: raw ipfs segments (the current focus), unixfs-based segments (for compatibility with large segments, with peertube-style hls, and for concatenating segments into single files for downloads or compatibility.
 
 Big questions to answer:
 - how does this interact with transcoding? seems like block transcoding is basically okay but we probably need to include a backtrack by one segment in the stream to be sure we get enough data to decode a complete frame. tempting to dive into h264 here but it would be great to avoid getting too low-level to make it easier to support new codecs.
-- when can this server decide to discard blocks? combination of block usage info + which (trusted?) peers have requested it + timestamps
+- when can this server decide to discard blocks? combination of block usage info + which (trusted?) peers have requested it + timestamps? nah, that seems horribly unreliable. this really needs to integrate with feedback from long-term storage, which currently is via this pinning api. that means we really need to keep asynchronous track of pinning requests, using their completion as a signal to mark blocks as discardable from our RAM storage. this means we need to keep track of a possibly large but finite number of outstanding pinning requests, depending on how often we update the pinning (which is currently the same as the publish interval but could be slower). also.. pinning should be pretty fast now that we have the warmer dialed in. so maybe it's fine.
 - how do we represent instructions for transforming discardable blocks? using containers and podman for this seems to be going well so far. how do transformations from URIs vs block-oriented sources work? want to keep the transcoding/splitting ffmpeg containers and the downloading ffmpeg/youtube-dl containers totally separate.
 - get more specific about how this supports dash, additional codecs, additional formats that we present over http/whatever for federation/compatibility
 
@@ -51,4 +51,3 @@ Just code:
   - also think about, in the same m3u8 extension, indicating which segments contain keyframes. is there already a way to do this?
 - add some api parts and try multiple streams, starting/stopping them dynamically
 - stop even trying to parse mpegts, let the sandboxed ffmpeg do all our media splitting
-
