@@ -20,6 +20,7 @@ notes & junk
 ------------
 
 - test whether ffmpeg will (efficiently?) read an endless concat over a unix socket or pipe
+  - looks like no, it tries to read the whole file into RAM. but if we are using this like a pool for transcoding segments and it doesn't actually need to be infinite, perhaps an arbitrary medium-sized finite number of entries is fine, so long as we have multiple processes in each pipeline pool. this also implies that pipelines which take a stream input aren't pooled but segmented inputs can also be pooled.
 - finish fix for libp2p-bitswap unwrap when peer disconnects. i can just mechanically turn them into warnings, but i do want to look closer at how the ledger works first to see if there's more to it than the peer disconnecting right after connecting or after requesting a block.
 - look for other solutions but.. one option for the segmentation is to make a first pass on everything to turn streams into segments, and then to use a segment-oriented pipeline to process those in ways which could include splitting them on non-keyframes to fit them into ipfs blocks.
 - going to need an abstraction for "an encoding pipeline" soon, including
