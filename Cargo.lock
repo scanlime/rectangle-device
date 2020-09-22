@@ -2685,6 +2685,7 @@ dependencies = [
  "log",
  "m3u8-rs",
  "mpeg2ts",
+ "prost",
  "rand 0.7.3",
  "rectangle-device-player",
  "regex",
