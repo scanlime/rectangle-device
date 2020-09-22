@@ -15,10 +15,18 @@ Runtime dependencies:
 - openssl -- just used temporarily for generating keys, as a bug workaround
 - podman -- [get the thing](https://podman.io/getting-started/installation). this is a lightweight container manager and runtime which does not require any additional privileges to run. this is used to manage sandboxed reproducible transcodes, with hashed ffmpeg images.
 
-----
 
 notes & junk
-............
+------------
+
+- test whether ffmpeg will (efficiently?) read an endless concat over a unix socket or pipe
+- finish fix for libp2p-bitswap unwrap when peer disconnects. i can just mechanically turn them into warnings, but i do want to look closer at how the ledger works first to see if there's more to it than the peer disconnecting right after connecting or after requesting a block.
+- look for other solutions but.. one option for the segmentation is to make a first pass on everything to turn streams into segments, and then to use a segment-oriented pipeline to process those in ways which could include splitting them on non-keyframes to fit them into ipfs blocks.
+- going to need an abstraction for "an encoding pipeline" soon, including
+  - a way to pool them for many requests.. send separate files/segments through a single ffmpeg process and single container instance
+  - durable and secure way to represent a specific tool and configuration
+  - inputs: configured for either URL (with network enabled) or concat socket thing (with network disabled)
+  - outputs: raw ipfs segments (the current focus), unixfs-based segments (for compatibility with large segments, with peertube-style hls, and for concatenating segments into single files for downloads or compatibility. 
 
 Big questions to answer:
 - how does this interact with transcoding? seems like block transcoding is basically okay but we probably need to include a backtrack by one segment in the stream to be sure we get enough data to decode a complete frame. tempting to dive into h264 here but it would be great to avoid getting too low-level to make it easier to support new codecs.
