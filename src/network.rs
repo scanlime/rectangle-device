@@ -252,29 +252,36 @@ impl P2PVideoNode {
     }
 
     fn store_block(&mut self, block_info: BlockInfo) {
-        let usage = &block_info.usage;
-        let block_size = block_info.block.data.len();
-        let cid_str = block_info.block.cid.to_string();
-        let cid_bytes = block_info.block.cid.to_bytes();
-        let hash_bytes = block_info.block.cid.hash().to_bytes();
-        let topic = self.gossipsub_topic.clone();
+        let cid = block_info.block.cid.clone();
+        let usage = block_info.usage.clone();
 
-        match self.swarm.gossipsub.publish(&topic, cid_bytes.clone()) {
+        let topic = self.gossipsub_topic.clone();
+        match self.swarm.gossipsub.publish(&topic, cid.to_bytes()) {
             Ok(()) => {},
             Err(PublishError::InsufficientPeers) => {},
             Err(err) => log::warn!("couldn't publish, {:?}", err)
         }
 
-        log::debug!("{:?}", Swarm::network_info(&mut self.swarm));
-        log::info!("stored {:7} bytes, {} {:?}", block_size, cid_str, usage);
+        log::info!("{:?}", Swarm::network_info(&mut self.swarm));
+        log::info!("stored {:7} bytes, {} {:?}",
+            block_info.block.data.len(), block_info.block.cid.to_string(), usage);
 
+        let hash_bytes = block_info.block.cid.hash().to_bytes();
         self.swarm.kad_lan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
         self.swarm.kad_wan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
 
         self.swarm.block_store.insert(hash_bytes, block_info);
 
+        self.warmup_block(cid, usage);
+    }
+
+    fn warmup_block(&self, cid: Cid, usage: BlockUsage) {
+        let cid_str = cid.to_string();
         self.warmer.send(format!("http://{}/ipfs/{}", config::IPFS_LOCAL_GATEWAY, cid_str));
-        self.warmer.send(format!("http://{}/ipfs/{}", config::IPFS_GATEWAY, cid_str));
+        match usage {
+            BlockUsage::VideoSegment(_) => (),
+            _ =>  self.warmer.send(format!("https://{}.ipfs.{}", cid_str, config::IPFS_GATEWAY))
+        }
     }
 }
 
