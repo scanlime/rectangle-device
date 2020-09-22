@@ -29,6 +29,7 @@ pub async fn start(tc: TranscodeConfig, pool: &SocketPool) -> Result<Child, Box<
     let mut command = runtime::command();
     command
         .arg("run")
+        .arg("--rm")
         .arg("--attach=stdout")
         .arg("--attach=stderr")
         .arg("--env-host=false")
