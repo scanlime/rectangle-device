@@ -24,7 +24,7 @@ impl HLSContainer {
             let seq_digits = highest_seq.to_string().len();
 
             for segment in &mc.blocks {
-                let filename = format!("s{0:01$}.ts", segment.sequence, seq_digits);
+                let filename = format!("z{0:01$}.ts", segment.sequence, seq_digits);
 
                 links.push(PbLink {
                     cid: segment.cid.clone(),
