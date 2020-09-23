@@ -1,4 +1,4 @@
-/db
-/target
-stderr.txt
+target/
+node_modules/
+dist/
 
