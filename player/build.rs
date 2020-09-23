@@ -13,12 +13,10 @@ fn main() {
         let dest = Path::new(&out_dir).join(file);
         let src = Path::new(file).canonicalize().unwrap();
         std::fs::copy(src.to_str().unwrap(), dest.to_str().unwrap()).unwrap();
+        rerun_if_changed_paths(src.to_str().unwrap()).unwrap();
     }
+    rerun_if_changed_paths( "src/**" ).unwrap();
 
     Command::new("yarn").current_dir(&out_dir).arg("install").status().unwrap();
     Command::new("yarn").current_dir(&out_dir).arg("run").arg("webpack").status().unwrap();
-
-    rerun_if_changed_paths( "package.json" ).unwrap();
-    rerun_if_changed_paths( "webpack.config.js" ).unwrap();
-    rerun_if_changed_paths( "src/**" ).unwrap();
 }
