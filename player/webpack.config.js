@@ -9,7 +9,7 @@ const config = {
 		hints: false
 	},
 	output: {
-		path: path.resolve(__dirname, 'dist'),
+		path: process.env.OUT_DIR || path.resolve(__dirname, 'dist'),
 	},
 	plugins: [
 		// new BundleAnalyzerPlugin()

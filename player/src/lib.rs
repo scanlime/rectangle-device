@@ -1,7 +1,7 @@
 pub use askama::Template;
 
 pub fn main_js() -> &'static str {
-    include_str!("../dist/main.js")
+    include_str!(concat!(env!("OUT_DIR"), "/main.js"))
 }
 
 #[derive(Template)]
