@@ -3,13 +3,13 @@ const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPl
 const path = require('path');
 
 const config = {
-	entry: './src/index.js',
+	entry: path.resolve(process.env.CARGO_MANIFEST_DIR || __dirname, 'src/index.js'),
 	mode: 'production',
 	performance: {
 		hints: false
 	},
 	output: {
-		path: process.env.OUT_DIR || path.resolve(__dirname, 'dist'),
+		path: path.resolve(process.env.OUT_DIR || __dirname, 'dist'),
 	},
 	plugins: [
 		// new BundleAnalyzerPlugin()

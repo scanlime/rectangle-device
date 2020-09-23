@@ -1,15 +1,22 @@
 use std::process::Command;
-use build_deps::rerun_if_changed_paths;
 use std::path::Path;
-use std::env;
+use build_deps::rerun_if_changed_paths;
 
 fn main() {
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let node_modules = Path::new(&out_dir).join("node_modules");
-    let yarn_args = vec![ "--modules-folder", node_modules.to_str().unwrap() ];
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let files_to_copy = [
+        "package.json",
+        "webpack.config.js",
+    ];
 
-    Command::new("yarn").args(&yarn_args).arg("install").status().unwrap();
-    Command::new("yarn").args(&yarn_args).arg("build").status().unwrap();
+    for file in &files_to_copy {
+        let dest = Path::new(&out_dir).join(file);
+        let src = Path::new(file).canonicalize().unwrap();
+        std::fs::copy(src.to_str().unwrap(), dest.to_str().unwrap()).unwrap();
+    }
+
+    Command::new("yarn").current_dir(&out_dir).arg("install").status().unwrap();
+    Command::new("yarn").current_dir(&out_dir).arg("run").arg("webpack").status().unwrap();
 
     rerun_if_changed_paths( "package.json" ).unwrap();
     rerun_if_changed_paths( "webpack.config.js" ).unwrap();
