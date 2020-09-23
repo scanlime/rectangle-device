@@ -2,12 +2,15 @@
 
 use crate::config;
 use crate::media::MediaContainer;
-use rectangle_device_blocks::{BlockInfo, BlockUsage, DirectoryBlock, Link, RawFileBlock};
+use rectangle_device_blocks::{BlockInfo, BlockUsage, PbLink};
+use rectangle_device_blocks::raw::RawBlockFile;
+use rectangle_device_blocks::dir::DirectoryBlock;
+use rectangle_device_blocks::package::Package;
 use m3u8_rs::playlist::{MediaPlaylist, MediaSegment, MediaPlaylistType};
 use async_std::sync::Sender;
 
 pub struct HLSContainer {
-    pub playlist: RawFileBlock,
+    pub playlist: RawBlockFile,
     pub directory: DirectoryBlock,
     pub sequence: usize
 }
@@ -20,10 +23,10 @@ impl HLSContainer {
         for segment in &mc.blocks {
             let filename = format!("s{:05}.ts", segment.sequence);
 
-            links.push(Link {
+            links.push(PbLink {
                 cid: segment.cid.clone(),
                 name: filename.clone(),
-                size: segment.bytes
+                size: segment.bytes as u64
             });
             hls_segments.push(MediaSegment {
                 uri: filename.into(),
@@ -47,7 +50,7 @@ impl HLSContainer {
 
         let mut playlist_data: Vec<u8> = Vec::new();
         hls_playlist.write_to(&mut playlist_data).unwrap();
-        let playlist = RawFileBlock::new(&playlist_data);
+        let playlist = RawBlockFile::new(&playlist_data);
 
         // Put the HLS playlist link first in the directory
         links.insert(0, playlist.link(config::HLS_FILENAME.to_string()));
@@ -60,7 +63,7 @@ impl HLSContainer {
     }
 
     pub async fn send(self, sender: &Sender<BlockInfo>) {
-        self.playlist.send(sender, BlockUsage::Playlist(self.sequence)).await;
-        self.directory.send(sender, BlockUsage::VideoDirectory(self.sequence)).await;
+        self.playlist.send(sender, &BlockUsage::Playlist(self.sequence)).await;
+        self.directory.send(sender, &BlockUsage::VideoDirectory(self.sequence)).await;
     }
 }

@@ -2696,10 +2696,12 @@ name = "rectangle-device-blocks"
 version = "0.1.0"
 dependencies = [
  "async-std",
+ "async-trait",
  "leb128",
  "libipld",
  "log",
  "prost",
+ "prost-build",
 ]
 
 [[package]]

@@ -6,7 +6,11 @@ edition = "2018"
 
 [dependencies]
 async-std = { version = "1.6.0", features = ["unstable"] }
+async-trait = "0.1.40"
 log = "0.4.11"
 libipld = "0.4.0"
 leb128 = "0.2.4"
 prost = "0.6.1"
+
+[build-dependencies]
+prost-build = "0.6.1"

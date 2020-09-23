@@ -5,7 +5,9 @@ use async_std::os::unix::net::UnixStream;
 use async_std::stream::StreamExt;
 use async_std::sync::Sender;
 use async_std::task;
-use rectangle_device_blocks::{BlockUsage, BlockInfo, RawFileBlock, BLOCK_MAX_BYTES};
+use rectangle_device_blocks::{BlockUsage, BlockInfo, BLOCK_MAX_BYTES};
+use rectangle_device_blocks::raw::RawBlockFile;
+use rectangle_device_blocks::package::Package;
 use rectangle_device_sandbox::{ffmpeg, socket::SocketPool};
 use crate::config;
 use crate::media::{MediaBlockInfo, MediaContainer};
@@ -85,7 +87,7 @@ impl VideoIngest {
         log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
             player_cid.to_string(),
             config::IPFS_GATEWAY,
-            player.directory.total_size);
+            player.directory.total_size());
 
         hls.send(&self.block_sender).await;
         player.send(&self.block_sender).await;
@@ -96,7 +98,7 @@ impl VideoIngest {
         log::info!("block is {} bytes, {} seconds", data.len(), duration);
 
         // This is where the hash computation happens
-        let file = RawFileBlock::new(data);
+        let file = RawBlockFile::new(data);
 
         let info = MediaBlockInfo {
             cid: file.block.cid.clone(),
@@ -110,7 +112,7 @@ impl VideoIngest {
         self.mc.blocks.push(info);
 
         log::trace!("sending {} {:?}", file.block.cid.to_string(), usage);
-        file.send(&self.block_sender, usage).await;
+        file.send(&self.block_sender, &usage).await;
     }
 
     async fn send_player_periodically(&mut self) {
@@ -153,7 +155,7 @@ impl VideoIngest {
         log::info!("ingest process starting, {:?}", tc);
 
         // This is a good time to make sure the receiver has our player dependencies too
-        self.hls_dist.clone().send(&self.block_sender).await;
+        self.hls_dist.send_copy(&self.block_sender).await;
 
         // Use one socket for the segment output; ffmpeg will re-open it for each segment
         let mut pool = SocketPool::new()?;
