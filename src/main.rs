@@ -9,7 +9,7 @@ use std::error::Error;
 use std::thread;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::from_env(Env::default().default_filter_or("rectangle_device=info")).init();
+    env_logger::from_env(Env::default().default_filter_or("rectangle_device::ingest=info")).init();
     let video_args : Vec<String> = std::env::args().skip(1).collect();
 
     // Increase the file limit if we can, the p2p networking uses a ton of sockets
