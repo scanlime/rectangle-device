@@ -20,19 +20,23 @@ impl HLSContainer {
         let mut hls_segments = vec![];
         let mut links = vec![];
 
-        for segment in &mc.blocks {
-            let filename = format!("s{:05}.ts", segment.sequence);
+        if let Some(highest_seq) = mc.blocks.iter().map(|segment| segment.sequence).max() {
+            let seq_digits = highest_seq.to_string().len();
 
-            links.push(PbLink {
-                cid: segment.cid.clone(),
-                name: filename.clone(),
-                size: segment.bytes as u64
-            });
-            hls_segments.push(MediaSegment {
-                uri: filename.into(),
-                duration: segment.duration,
-                ..Default::default()
-            });
+            for segment in &mc.blocks {
+                let filename = format!("s{0:01$}.ts", segment.sequence, seq_digits);
+
+                links.push(PbLink {
+                    cid: segment.cid.clone(),
+                    name: filename.clone(),
+                    size: segment.bytes as u64
+                });
+                hls_segments.push(MediaSegment {
+                    uri: filename.into(),
+                    duration: segment.duration,
+                    ..Default::default()
+                });
+            }
         }
 
         // https://tools.ietf.org/html/rfc8216
