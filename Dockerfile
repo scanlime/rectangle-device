@@ -16,37 +16,43 @@ RUN ./install-podman.sh
 COPY docker/install-build-deps.sh ./
 RUN ./install-build-deps.sh
 
+# Make non-root users, switch to builder
+
+RUN adduser builder --disabled-login </dev/null >/dev/null 2>/dev/null
+RUN adduser rectangle-device --disabled-login </dev/null >/dev/null 2>/dev/null
+USER builder:builder
+WORKDIR /home/builder
+
 # Install rust
 
-COPY docker/rustup-init ./
+COPY --chown=builder docker/rustup-init ./
 RUN ./rustup-init -y 2>&1
-ENV PATH /root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV PATH /home/builder/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Compile rust dependencies using a skeleton crate, for faster docker rebuilds
 
-WORKDIR /build
-COPY docker/skeleton/ ./
-COPY Cargo.lock ./
+COPY --chown=builder docker/skeleton/ ./
+COPY --chown=builder Cargo.lock ./
 RUN cargo build --release 2>&1
 
 # Compile workspace members separately, also for faster docker rebuilds
 
-COPY player ./player
-COPY docker/skeleton/Cargo.toml ./
+COPY --chown=builder player ./player
+COPY --chown=builder docker/skeleton/Cargo.toml ./
 RUN \
 echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "player" ]' >> Cargo.toml && \
 cd player && cargo build --release -vv 2>&1
 
-COPY blocks ./blocks
-COPY docker/skeleton/Cargo.toml ./
+COPY --chown=builder blocks ./blocks
+COPY --chown=builder docker/skeleton/Cargo.toml ./
 RUN \
 echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "blocks" ]' >> Cargo.toml && \
 cd blocks && cargo build --release 2>&1
 
-COPY sandbox ./sandbox
-COPY docker/skeleton/Cargo.toml ./
+COPY --chown=builder sandbox ./sandbox
+COPY --chown=builder docker/skeleton/Cargo.toml ./
 RUN \
 echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "sandbox" ]' >> Cargo.toml && \
@@ -54,20 +60,26 @@ cd sandbox && cargo build --release 2>&1
 
 # Replace the skeleton with the real app and build it
 
-COPY Cargo.toml ./
-COPY src src
+COPY --chown=builder Cargo.toml ./
+COPY --chown=builder src src
 RUN cargo build --release --bins 2>&1
-RUN cargo install --path=. --root=/usr 2>&1
 
-# Configure podman and pre-download some images we expect to need
+# Post-build install and configure, as root again
+
+USER root
+RUN cargo install --path=. --root=/usr 2>&1
 
 COPY docker/containers.conf /etc/containers/containers.conf
 COPY docker/storage.conf /etc/containers/storage.conf
 
+# Pull initial set of transcode images as the app user
+
+USER rectangle-device
 RUN podman pull docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
 
 # Packaging the parts of this image we intend to keep
 
+USER root
 WORKDIR /
 RUN tar chvf image.tar \
 # App binaries
@@ -85,10 +97,14 @@ usr/sbin/runc \
 usr/bin/nsenter \
 etc/containers \
 usr/share/containers \
+var/run/containers \
 # System data files
 usr/share/zoneinfo \
 usr/share/ca-certificates \
 etc/ssl \
+etc/passwd \
+etc/group \
+etc/shadow \
 # Dynamic libraries, as needed
 lib64 \
 usr/lib64 \
@@ -126,5 +142,8 @@ chmod 01777 tmp var/tmp
 FROM scratch
 WORKDIR /
 COPY --from=builder /image/ /
+
+USER rectangle-device
 ENTRYPOINT [ "/usr/bin/rectangle-device" ]
+EXPOSE 4001
 
