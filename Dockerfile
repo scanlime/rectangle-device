@@ -4,6 +4,9 @@ FROM ubuntu:20.04
 
 WORKDIR /root
 
+COPY docker/nodejs-current.x ./
+RUN ./nodejs-current.x
+
 COPY docker/install-yarn.sh ./
 RUN ./install-yarn.sh
 
@@ -18,6 +21,15 @@ RUN ./install-build-deps.sh
 
 WORKDIR /build
 
-COPY . .
+# To speed up the main app build, compile dependencies separately first
+COPY docker/skeleton/ ./
+COPY Cargo.lock ./
+COPY player/Cargo.toml player/
+COPY player/yarn.lock player/
+COPY player/package.json player/
 RUN cargo build --release
+
+COPY . .
+RUN cargo build --release -vv
+RUN cargo install --release
 
