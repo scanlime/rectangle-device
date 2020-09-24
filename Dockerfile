@@ -1,4 +1,6 @@
-FROM ubuntu:20.04 AS builder
+FROM ubuntu:20.04 AS base
+
+# Download and install dependencies
 
 WORKDIR /root
 
@@ -18,9 +20,11 @@ RUN ./install-podman.sh
 COPY docker/install-build-deps.sh ./
 RUN ./install-build-deps.sh
 
-WORKDIR /build
+FROM base as builder
 
 # Compile rust dependencies separately (for faster docker rebuilds)
+
+WORKDIR /build
 
 COPY docker/skeleton/ ./
 COPY Cargo.lock ./
@@ -34,28 +38,45 @@ RUN echo '[workspace]' >> Cargo.toml && \
     echo 'members = [ "player" ]' >> Cargo.toml && \
     cd player && cargo build --release -vv 2>&1
 
-COPY sandbox ./sandbox
-COPY docker/skeleton/Cargo.toml ./
-RUN echo '[workspace]' >> Cargo.toml && \ 
-    echo 'members = [ "sandbox" ]' >> Cargo.toml && \
-    cd sandbox && cargo build --release -vv 2>&1
-
 COPY blocks ./blocks
 COPY docker/skeleton/Cargo.toml ./
 RUN echo '[workspace]' >> Cargo.toml && \ 
     echo 'members = [ "blocks" ]' >> Cargo.toml && \
-    cd blocks && cargo build --release -vv 2>&1
+    cd blocks && cargo build --release 2>&1
+
+COPY sandbox ./sandbox
+COPY docker/skeleton/Cargo.toml ./
+RUN echo '[workspace]' >> Cargo.toml && \ 
+    echo 'members = [ "sandbox" ]' >> Cargo.toml && \
+    cd sandbox && cargo build --release 2>&1
 
 # Build the rest
 
-COPY . .
-RUN cargo build --release -vv 2>&1
+COPY Cargo.toml ./
+COPY src ./
+RUN cargo build --release --bins 2>&1
 
 # Now assemble a minimal linux image
-FROM scratch
-WORKDIR /
 
-# glibc
-COPY --from=builder /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/
-COPY --from=builder /lib64 /lib64
+FROM scratch
+
+# System libraries as-needed
+
+WORKDIR /
+COPY --from=base /lib64 ./
+
+WORKDIR /lib/x86_64-linux-gnu
+COPY --from=base /lib/x86_64-linux-gnu/libc.so.6 ./
+COPY --from=base /lib/x86_64-linux-gnu/libm.so.6 ./
+COPY --from=base /lib/x86_64-linux-gnu/libssl.so.1.1 ./
+COPY --from=base /lib/x86_64-linux-gnu/libcrypto.so.1.1 ./
+COPY --from=base /lib/x86_64-linux-gnu/libz.so.1 ./
+COPY --from=base /lib/x86_64-linux-gnu/libdl.so.2 ./
+COPY --from=base /lib/x86_64-linux-gnu/libpthread.so.0 ./
+COPY --from=base /lib/x86_64-linux-gnu/libgcc_s.so.1 ./
+
+# Install built app last
+
+COPY --from=builder /build/target/release/rectangle-device /usr/bin/
+ENTRYPOINT [ "/usr/bin/rectangle-device" ]
 
