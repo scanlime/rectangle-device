@@ -65,6 +65,7 @@ RUN \
 git clone https://github.com/opencontainers/runc.git /home/builder/go/src/github.com/opencontainers/runc
 RUN \
 cd /home/builder/go/src/github.com/opencontainers/runc && \
+export GOPATH=/home/builder/go && \
 make BUILDTAGS="selinux seccomp"
 USER root
 RUN cp /home/builder/go/src/github.com/opencontainers/runc/runc /usr/bin/runc
@@ -76,9 +77,12 @@ RUN \
 git clone https://github.com/containers/podman/ /home/builder/go/src/github.com/containers/podman
 RUN \
 cd /home/builder/go/src/github.com/containers/podman && \
+export GOPATH=/home/builder/go && \
 make BUILDTAGS="selinux seccomp"
 USER root
-RUN make install PREFIX=/usr
+RUN \
+cd /home/builder/go/src/github.com/containers/podman && \
+make install PREFIX=/usr
 USER builder:builder
 
 # Install latest stable rust
@@ -142,14 +146,14 @@ USER root
 WORKDIR /
 RUN tar chvf image.tar \
 #
-# App binaries
+# App
 usr/bin/rectangle-device \
+home/rectangle-device \
+#
+# System tools
 bin/ls \
 bin/ldd \
 bin/openssl \
-#
-# App data (container images)
-home/rectangle-device \
 #
 # Podman container engine
 usr/bin/podman \
@@ -213,4 +217,3 @@ ENTRYPOINT [ "/usr/bin/rectangle-device" ]
 
 # Incoming libp2p connections
 EXPOSE 4004/tcp
-
