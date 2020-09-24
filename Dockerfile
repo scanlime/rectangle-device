@@ -57,7 +57,7 @@ cd crun && \
 ./configure --prefix=/usr && \
 make
 USER root
-RUN cd crun && make Install
+RUN cd crun && make install
 USER builder:builder
 
 # Build latest conmon from git
