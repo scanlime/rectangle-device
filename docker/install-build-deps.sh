@@ -6,5 +6,5 @@ apt-get update
 apt-get install -y build-essential git pkg-config openssl libssl-dev
 
 # These are just for developer convenience
-apt-get install -y strace gdb
+apt-get install -y strace gdb nano vim
 
