@@ -4,8 +4,8 @@ FROM ubuntu:20.04 AS builder
 
 WORKDIR /root
 
-COPY docker/install/nodejs-current.x ./
-RUN bash ./nodejs-current.x
+COPY docker/install/nodejs-current.sh ./
+RUN bash ./nodejs-current.sh
 
 COPY docker/install/yarn.sh ./
 RUN sh ./yarn.sh
@@ -25,8 +25,8 @@ WORKDIR /home/builder
 
 # Install rust
 
-COPY --chown=builder docker/install/rustup-init ./
-RUN ./rustup-init -y 2>&1
+COPY --chown=builder docker/install/rustup-init.sh ./
+RUN ./rustup-init.sh -y 2>&1
 ENV PATH /home/builder/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Compile rust dependencies using a skeleton crate, for faster docker rebuilds
