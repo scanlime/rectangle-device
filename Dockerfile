@@ -4,17 +4,17 @@ FROM ubuntu:20.04 AS builder
 
 WORKDIR /root
 
-COPY docker/nodejs-current.x ./
+COPY docker/install/nodejs-current.x ./
 RUN ./nodejs-current.x
 
-COPY docker/install-yarn.sh ./
-RUN ./install-yarn.sh
+COPY docker/install/yarn.sh ./
+RUN ./yarn.sh
 
-COPY docker/install-podman.sh ./
-RUN ./install-podman.sh
+COPY docker/install/podman.sh ./
+RUN ./podman.sh
 
-COPY docker/install-build-deps.sh ./
-RUN ./install-build-deps.sh
+COPY docker/install/build-deps.sh ./
+RUN ./build-deps.sh
 
 # Make non-root users, switch to builder
 
@@ -25,7 +25,7 @@ WORKDIR /home/builder
 
 # Install rust
 
-COPY --chown=builder docker/rustup-init ./
+COPY --chown=builder docker/install/rustup-init ./
 RUN ./rustup-init -y 2>&1
 ENV PATH /home/builder/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -69,8 +69,8 @@ RUN cargo build --release --bins 2>&1
 USER root
 RUN install target/release/rectangle-device /usr/bin/rectangle-device
 
-COPY docker/containers.conf /etc/containers/containers.conf
-COPY docker/storage.conf /etc/containers/storage.conf
+COPY docker/podman/containers.conf /etc/containers/containers.conf
+COPY docker/podman/storage.conf /etc/containers/storage.conf
 
 # Pull initial set of transcode images as the app user
 
