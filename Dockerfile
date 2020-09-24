@@ -9,7 +9,8 @@ COPY docker/install-yarn.sh ./
 RUN ./install-yarn.sh
 
 COPY docker/rustup-init ./
-RUN ./rustup-init -y && ln -s /root/.cargo/bin/* /usr/bin/
+RUN ./rustup-init -y 2>&1 && \
+    ln -s /root/.cargo/bin/* /usr/bin/
 
 COPY docker/install-podman.sh ./
 RUN ./install-podman.sh
