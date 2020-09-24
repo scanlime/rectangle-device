@@ -62,22 +62,27 @@ RUN cargo install --path=. --root=/usr 2>&1
 # Packaging the parts of this image we intend to keep
 
 WORKDIR /
-RUN tar cvf image.tar \
+RUN tar chvf image.tar \
 # App binaries
 usr/bin/rectangle-device \
 # Podman container engine
 usr/bin/podman \
+usr/bin/conmon \
 usr/bin/crun \
 # System binaries
+bin/openssl \
 bin/sh \
+bin/ls \
 bin/ldd \
 bin/bash \
-bin/dash \
+# System data files
+/usr/share/zoneinfo \
 # Dynamic libraries, as needed
 lib64 \
 usr/lib64 \
 lib/x86_64-linux-gnu/libc.so.6 \
 lib/x86_64-linux-gnu/libm.so.6 \
+lib/x86_64-linux-gnu/libtinfo.so.6 \
 lib/x86_64-linux-gnu/libssl.so.1.1 \
 lib/x86_64-linux-gnu/libcrypto.so.1.1 \
 lib/x86_64-linux-gnu/libz.so.1 \
@@ -92,11 +97,16 @@ lib/x86_64-linux-gnu/libgpg-error.so.0 \
 lib/x86_64-linux-gnu/libyajl.so.2 \
 lib/x86_64-linux-gnu/libsystemd.so.0 \
 lib/x86_64-linux-gnu/liblzma.so.5 \
-lib/x86_64-linux-gnu/liblz4.so.1
+lib/x86_64-linux-gnu/liblz4.so.1 \
+lib/x86_64-linux-gnu/libselinux.so.1 \
+lib/x86_64-linux-gnu/libpcre2-8.so.0
 
-RUN mkdir image && cd image && tar xf ../image.tar
-
-# Now assemble a minimal linux image
+RUN \
+mkdir image && \
+cd image && \
+tar xf ../image.tar && \
+mkdir dev tmp && \
+chmod 01777 tmp
 
 FROM scratch
 WORKDIR /
