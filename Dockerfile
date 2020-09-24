@@ -84,14 +84,14 @@ RUN podman pull docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
 USER root
 WORKDIR /
 RUN tar chvf image.tar \
+#
 # App binaries
 usr/bin/rectangle-device \
 bin/ls \
 bin/ldd \
 bin/openssl \
-# Pre-installed transcode container images
-var/lib/containers \
-# Podman container engine
+#
+# Podman container engine and installed containers
 usr/bin/podman \
 usr/bin/conmon \
 usr/bin/crun \
@@ -100,6 +100,8 @@ usr/bin/nsenter \
 etc/containers \
 usr/share/containers \
 var/run/containers \
+var/lib/containers \
+#
 # System data files
 usr/share/zoneinfo \
 usr/share/ca-certificates \
@@ -107,6 +109,7 @@ etc/ssl \
 etc/passwd \
 etc/group \
 etc/shadow \
+#
 # Dynamic libraries, as needed
 lib64 \
 usr/lib64 \
@@ -141,8 +144,8 @@ tar xf ../image.tar && \
 mkdir proc sys dev tmp var/tmp && \
 chmod 01777 tmp var/tmp
 
-FROM scratch
 WORKDIR /
+FROM scratch
 COPY --from=builder /image/ /
 
 USER rectangle-device
