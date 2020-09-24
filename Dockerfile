@@ -95,7 +95,11 @@ lib/x86_64-linux-gnu/liblzma.so.5 \
 lib/x86_64-linux-gnu/liblz4.so.1
 
 RUN mkdir image && cd image && tar xf ../image.tar
+
+# Now assemble a minimal linux image
+
 FROM scratch
+WORKDIR /
 COPY --from=builder /image/ /
 ENTRYPOINT [ "/usr/bin/rectangle-device" ]
 
