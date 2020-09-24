@@ -242,7 +242,7 @@ impl P2PVideoNode {
         behaviour.gossipsub.subscribe(gossipsub_topic.clone());
 
         let mut swarm = Swarm::new(transport, behaviour, local_peer_id.clone());
-        Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/0".parse()?)?;
+        Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/4004".parse()?)?;
 
         Ok(P2PVideoNode {
             gossipsub_topic,

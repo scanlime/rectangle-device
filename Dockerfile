@@ -67,7 +67,7 @@ RUN cargo build --release --bins 2>&1
 # Post-build install and configure, as root again
 
 USER root
-RUN cargo install --path=. --root=/usr 2>&1
+RUN install target/release/rectangle-device /usr/bin/rectangle-device
 
 COPY docker/containers.conf /etc/containers/containers.conf
 COPY docker/storage.conf /etc/containers/storage.conf
@@ -75,6 +75,8 @@ COPY docker/storage.conf /etc/containers/storage.conf
 # Pull initial set of transcode images as the app user
 
 USER rectangle-device
+WORKDIR /home/rectangle-device
+
 RUN podman pull docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
 
 # Packaging the parts of this image we intend to keep
@@ -145,5 +147,7 @@ COPY --from=builder /image/ /
 
 USER rectangle-device
 ENTRYPOINT [ "/usr/bin/rectangle-device" ]
-EXPOSE 4001
+
+# Incoming libp2p connections
+EXPOSE 4004/tcp
 
