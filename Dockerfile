@@ -1,5 +1,20 @@
 FROM ubuntu:20.04 AS builder
 
+ENV CARGO_HOME /home/builder/.cargo
+ENV GOPATH /home/builder/go
+ENV PATH \
+${GOPATH}/bin:\
+${CARGO_HOME}/bin:\
+/usr/local/sbin:\
+/usr/local/bin:\
+/usr/sbin:\
+/usr/bin:\
+/sbin:\
+/bin
+
+ENV DEBIAN_FRONTEND noninteractive
+ENV DEBCONF_NONINTERACTIVE_SEEN true
+
 # Compatibility with windows build hosts
 
 RUN apt-get update && apt-get install -y dos2unix
@@ -14,9 +29,6 @@ RUN dos2unix -q nodejs-current.sh; bash ./nodejs-current.sh
 COPY docker/install/yarn.sh ./
 RUN dos2unix -q yarn.sh; sh ./yarn.sh
 
-COPY docker/install/podman.sh ./
-RUN dos2unix -q podman.sh; sh ./podman.sh
-
 COPY docker/install/build-deps.sh ./
 RUN dos2unix -q build-deps.sh; sh ./build-deps.sh
 
@@ -27,11 +39,54 @@ RUN adduser rectangle-device --disabled-login </dev/null >/dev/null 2>/dev/null
 USER builder:builder
 WORKDIR /home/builder
 
-# Install rust
+# Build a fresh golang
+
+RUN \
+git clone https://go.googlesource.com/go $GOPATH 2>&1 && \
+cd $GOPATH && \
+git checkout tags/go1.15.2 2>&1
+RUN \
+cd $GOPATH/src && \
+./all.bash
+
+# Build latest conmon from git
+
+RUN \
+git clone https://github.com/containers/conmon
+RUN \
+cd conmon && \
+export GOCACHE="$(mktemp -d)" && \
+make
+USER root
+RUN make podman
+USER builder:builder
+
+# Build latest runc from git
+
+RUN \
+git clone https://github.com/opencontainers/runc.git $GOPATH/src/github.com/opencontainers/runc
+RUN \
+cd $GOPATH/src/github.com/opencontainers/runc && \
+make BUILDTAGS="selinux seccomp"
+USER root
+RUN cp $GOPATH/src/github.com/opencontainers/runc/runc /usr/bin/runc
+USER builder:builder
+
+# Build latest podman from git
+
+RUN \
+git clone https://github.com/containers/podman/ $GOPATH/src/github.com/containers/podman
+RUN \
+cd $GOPATH/src/github.com/containers/podman && \
+make BUILDTAGS="selinux seccomp"
+USER root
+RUN make install PREFIX=/usr
+USER builder:builder
+
+# Install latest stable rust
 
 COPY --chown=builder docker/install/rustup-init.sh ./
 RUN dos2unix -q rustup-init.sh; ./rustup-init.sh -y 2>&1
-ENV PATH /home/builder/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Compile rust dependencies using a skeleton crate, for faster docker rebuilds
 
