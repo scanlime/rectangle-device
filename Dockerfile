@@ -1,8 +1,8 @@
 FROM ubuntu:20.04 AS builder
 
 ENV PATH \
-${GOPATH}/bin:\
-${CARGO_HOME}/bin:\
+/home/builder/go/bin:\
+/home/builder/.cargo/bin:\
 /usr/local/sbin:\
 /usr/local/bin:\
 /usr/sbin:\
@@ -40,8 +40,8 @@ WORKDIR /home/builder
 # Build a fresh golang
 
 RUN \
-git clone https://go.googlesource.com/go $GOPATH 2>&1 && \
-cd $GOPATH && \
+git clone https://go.googlesource.com/go /home/builder/go 2>&1 && \
+cd /home/builder/go && \
 git checkout tags/go1.15.2 2>&1
 RUN \
 cd $GOPATH/src && \
@@ -62,20 +62,20 @@ USER builder:builder
 # Build latest runc from git
 
 RUN \
-git clone https://github.com/opencontainers/runc.git $GOPATH/src/github.com/opencontainers/runc
+git clone https://github.com/opencontainers/runc.git /home/builder/go/src/github.com/opencontainers/runc
 RUN \
-cd $GOPATH/src/github.com/opencontainers/runc && \
+cd /home/builder/go/src/github.com/opencontainers/runc && \
 make BUILDTAGS="selinux seccomp"
 USER root
-RUN cp $GOPATH/src/github.com/opencontainers/runc/runc /usr/bin/runc
+RUN cp /home/builder/go/src/github.com/opencontainers/runc/runc /usr/bin/runc
 USER builder:builder
 
 # Build latest podman from git
 
 RUN \
-git clone https://github.com/containers/podman/ $GOPATH/src/github.com/containers/podman
+git clone https://github.com/containers/podman/ /home/builder/go/src/github.com/containers/podman
 RUN \
-cd $GOPATH/src/github.com/containers/podman && \
+cd /home/builder/go/src/github.com/containers/podman && \
 make BUILDTAGS="selinux seccomp"
 USER root
 RUN make install PREFIX=/usr
