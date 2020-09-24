@@ -1,6 +1,4 @@
-# this is the latest ubuntu supported by the podman distribution we're using.
-# to do: build an image containing only the necessary binaries, not the whole build env.
-FROM ubuntu:20.04
+FROM ubuntu:20.04 AS builder
 
 WORKDIR /root
 
@@ -21,15 +19,42 @@ RUN ./install-build-deps.sh
 
 WORKDIR /build
 
-# To speed up the main app build, compile dependencies separately first
+# Compile rust dependencies separately (for faster docker rebuilds)
+
 COPY docker/skeleton/ ./
 COPY Cargo.lock ./
-COPY player/Cargo.toml player/
-COPY player/yarn.lock player/
-COPY player/package.json player/
-RUN cargo build --release
+RUN cargo build --release 2>&1
+
+# Compile workspace members separately (for faster docker rebuilds)
+
+COPY player ./player
+COPY docker/skeleton/Cargo.toml ./
+RUN echo '[workspace]' >> Cargo.toml && \ 
+    echo 'members = [ "player" ]' >> Cargo.toml && \
+    cd player && cargo build --release -vv 2>&1
+
+COPY sandbox ./sandbox
+COPY docker/skeleton/Cargo.toml ./
+RUN echo '[workspace]' >> Cargo.toml && \ 
+    echo 'members = [ "sandbox" ]' >> Cargo.toml && \
+    cd sandbox && cargo build --release -vv 2>&1
+
+COPY blocks ./blocks
+COPY docker/skeleton/Cargo.toml ./
+RUN echo '[workspace]' >> Cargo.toml && \ 
+    echo 'members = [ "blocks" ]' >> Cargo.toml && \
+    cd blocks && cargo build --release -vv 2>&1
+
+# Build the rest
 
 COPY . .
-RUN cargo build --release -vv
-RUN cargo install --release
+RUN cargo build --release -vv 2>&1
+
+# Now assemble a minimal linux image
+FROM scratch
+WORKDIR /
+
+# glibc
+COPY --from=builder /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/
+COPY --from=builder /lib64 /lib64
 

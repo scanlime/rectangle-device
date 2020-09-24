@@ -28,6 +28,3 @@ serde = "1.0.116"
 tempfile = "3.1.0"
 thiserror = "1.0"
 tokio = "0.2.22"
-
-[workspace]
-members = [ "player" ]
