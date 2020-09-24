@@ -44,7 +44,7 @@ git clone https://go.googlesource.com/go /home/builder/go 2>&1 && \
 cd /home/builder/go && \
 git checkout tags/go1.15.2 2>&1
 RUN \
-cd $GOPATH/src && \
+cd /home/builder/go/src && \
 ./all.bash
 
 # Build latest conmon from git
