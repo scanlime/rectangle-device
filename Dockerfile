@@ -5,16 +5,16 @@ FROM ubuntu:20.04 AS builder
 WORKDIR /root
 
 COPY docker/install/nodejs-current.x ./
-RUN ./nodejs-current.x
+RUN bash ./nodejs-current.x
 
 COPY docker/install/yarn.sh ./
-RUN ./yarn.sh
+RUN sh ./yarn.sh
 
 COPY docker/install/podman.sh ./
-RUN ./podman.sh
+RUN sh ./podman.sh
 
 COPY docker/install/build-deps.sh ./
-RUN ./build-deps.sh
+RUN sh ./build-deps.sh
 
 # Make non-root users, switch to builder
 
@@ -91,7 +91,10 @@ bin/ls \
 bin/ldd \
 bin/openssl \
 #
-# Podman container engine and installed containers
+# App data (container images)
+home/rectangle-device \
+#
+# Podman container engine
 usr/bin/podman \
 usr/bin/conmon \
 usr/bin/crun \
