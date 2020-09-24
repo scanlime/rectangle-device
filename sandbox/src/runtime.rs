@@ -5,9 +5,7 @@ use async_process::{Command, Stdio};
 use std::error::Error;
 
 pub fn command() -> Command {
-    let mut command = Command::new("podman");
-    command.arg("--storage-driver").arg("vfs");
-    command
+    Command::new("podman")
 }
 
 pub async fn image_exists(id: &ImageDigest) -> Result<bool, Box<dyn Error>> {

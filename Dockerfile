@@ -59,12 +59,24 @@ COPY src src
 RUN cargo build --release --bins 2>&1
 RUN cargo install --path=. --root=/usr 2>&1
 
+# Configure podman and pre-download some images we expect to need
+
+COPY docker/containers.conf /etc/containers/containers.conf
+COPY docker/storage.conf /etc/containers/storage.conf
+
+RUN podman pull docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
+
 # Packaging the parts of this image we intend to keep
 
 WORKDIR /
 RUN tar chvf image.tar \
 # App binaries
 usr/bin/rectangle-device \
+bin/ls \
+bin/ldd \
+bin/openssl \
+# Pre-installed transcode container images
+var/lib/containers \
 # Podman container engine
 usr/bin/podman \
 usr/bin/conmon \
@@ -72,17 +84,11 @@ usr/bin/crun \
 usr/sbin/runc \
 usr/bin/nsenter \
 etc/containers \
-# System binaries
-bin/sh \
-bin/ls \
-bin/ldd \
-bin/openssl \
-bin/bash \
+usr/share/containers \
 # System data files
 usr/share/zoneinfo \
 usr/share/ca-certificates \
 etc/ssl \
-run/systemd \
 # Dynamic libraries, as needed
 lib64 \
 usr/lib64 \
@@ -114,7 +120,7 @@ RUN \
 mkdir image && \
 cd image && \
 tar xf ../image.tar && \
-mkdir dev tmp var var/tmp && \
+mkdir proc sys dev tmp var/tmp && \
 chmod 01777 tmp var/tmp
 
 FROM scratch
