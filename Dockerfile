@@ -69,11 +69,12 @@ usr/bin/rectangle-device \
 usr/bin/podman \
 usr/bin/conmon \
 usr/bin/crun \
+usr/bin/runc \
 # System binaries
-bin/openssl \
 bin/sh \
 bin/ls \
 bin/ldd \
+bin/openssl \
 bin/bash \
 # System data files
 /usr/share/zoneinfo \
@@ -99,7 +100,10 @@ lib/x86_64-linux-gnu/libsystemd.so.0 \
 lib/x86_64-linux-gnu/liblzma.so.5 \
 lib/x86_64-linux-gnu/liblz4.so.1 \
 lib/x86_64-linux-gnu/libselinux.so.1 \
-lib/x86_64-linux-gnu/libpcre2-8.so.0
+lib/x86_64-linux-gnu/libpcre2-8.so.0 \
+lib/x86_64-linux-gnu/libgcrypt.so.20 \
+lib/x86_64-linux-gnu/libglib-2.0.so.0 \
+lib/x86_64-linux-gnu/libpcre.so.3
 
 RUN \
 mkdir image && \
