@@ -2,31 +2,35 @@
 set -e
 apt-get update
 apt-get install -y \
+  autoconf \
+  automake \
   build-essential \
-  git \
-  pkg-config \
-  openssl \
-  libssl-dev \
-  strace \
+  gcc \
   gdb \
-  nano \
-  vim \
   git \
-  golang-go \
   go-md2man \
+  golang-go \
   iptables \
   libapparmor-dev \
   libassuan-dev \
   libbtrfs-dev \
   libc6-dev \
+  libcap-dev \
   libdevmapper-dev \
   libglib2.0-dev \
-  libgpgme-dev \
   libgpg-error-dev \
+  libgpgme-dev \
   libprotobuf-dev \
   libseccomp-dev \
   libselinux1-dev \
+  libssl-dev \
   libsystemd-dev \
+  libtool \
+  libyajl-dev \
+  nano \
+  openssl \
   pkg-config \
-  uidmap
-
+  python3 \
+  strace \
+  uidmap \
+  vim \

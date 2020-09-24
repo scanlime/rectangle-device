@@ -47,6 +47,19 @@ RUN \
 cd /home/builder/go/src && \
 ./all.bash
 
+# Build latest crun from git
+
+RUN \
+git clone https://github.com/containers/crun.git
+RUN \
+cd crun && \
+./autogen.sh && \
+./configure --prefix=/usr && \
+make
+USER root
+RUN cd crun && make Install
+USER builder:builder
+
 # Build latest conmon from git
 
 RUN \
@@ -57,18 +70,6 @@ export GOCACHE="$(mktemp -d)" && \
 make
 USER root
 RUN cd conmon && make podman
-USER builder:builder
-
-# Build latest runc from git
-
-RUN \
-git clone https://github.com/opencontainers/runc.git /home/builder/go/src/github.com/opencontainers/runc
-RUN \
-cd /home/builder/go/src/github.com/opencontainers/runc && \
-export GOPATH=/home/builder/go && \
-make BUILDTAGS="selinux seccomp"
-USER root
-RUN cp /home/builder/go/src/github.com/opencontainers/runc/runc /usr/bin/runc
 USER builder:builder
 
 # Build latest podman from git
@@ -159,7 +160,6 @@ bin/openssl \
 usr/bin/podman \
 usr/bin/conmon \
 usr/bin/crun \
-usr/sbin/runc \
 usr/bin/nsenter \
 etc/containers \
 usr/share/containers \
