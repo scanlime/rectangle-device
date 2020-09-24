@@ -1,7 +1,5 @@
 FROM ubuntu:20.04 AS builder
 
-ENV CARGO_HOME /home/builder/.cargo
-ENV GOPATH /home/builder/go
 ENV PATH \
 ${GOPATH}/bin:\
 ${CARGO_HOME}/bin:\
@@ -58,7 +56,7 @@ cd conmon && \
 export GOCACHE="$(mktemp -d)" && \
 make
 USER root
-RUN make podman
+RUN cd conmon && make podman
 USER builder:builder
 
 # Build latest runc from git
