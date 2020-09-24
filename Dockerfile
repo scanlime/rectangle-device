@@ -1,20 +1,24 @@
 FROM ubuntu:20.04 AS builder
 
+# Compatibility with windows build hosts
+
+RUN apt-get update && apt-get install -y dos2unix
+
 # Install distro packages
 
 WORKDIR /root
 
 COPY docker/install/nodejs-current.sh ./
-RUN bash ./nodejs-current.sh
+RUN dos2unix -q nodejs-current.sh; bash ./nodejs-current.sh
 
 COPY docker/install/yarn.sh ./
-RUN sh ./yarn.sh
+RUN dos2unix -q yarn.sh; sh ./yarn.sh
 
 COPY docker/install/podman.sh ./
-RUN sh ./podman.sh
+RUN dos2unix -q podman.sh; sh ./podman.sh
 
 COPY docker/install/build-deps.sh ./
-RUN sh ./build-deps.sh
+RUN dos2unix -q build-deps.sh; sh ./build-deps.sh
 
 # Make non-root users, switch to builder
 
@@ -26,7 +30,7 @@ WORKDIR /home/builder
 # Install rust
 
 COPY --chown=builder docker/install/rustup-init.sh ./
-RUN ./rustup-init.sh -y 2>&1
+RUN dos2unix -q rustup-init.sh; ./rustup-init.sh -y 2>&1
 ENV PATH /home/builder/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Compile rust dependencies using a skeleton crate, for faster docker rebuilds
