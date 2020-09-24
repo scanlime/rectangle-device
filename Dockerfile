@@ -69,7 +69,9 @@ usr/bin/rectangle-device \
 usr/bin/podman \
 usr/bin/conmon \
 usr/bin/crun \
-usr/bin/runc \
+usr/sbin/runc \
+usr/bin/nsenter \
+etc/containers \
 # System binaries
 bin/sh \
 bin/ls \
@@ -77,7 +79,9 @@ bin/ldd \
 bin/openssl \
 bin/bash \
 # System data files
-/usr/share/zoneinfo \
+usr/share/zoneinfo \
+usr/share/ca-certificates \
+run/systemd \
 # Dynamic libraries, as needed
 lib64 \
 usr/lib64 \
@@ -109,8 +113,8 @@ RUN \
 mkdir image && \
 cd image && \
 tar xf ../image.tar && \
-mkdir dev tmp && \
-chmod 01777 tmp
+mkdir dev tmp var var/tmp && \
+chmod 01777 tmp var/tmp
 
 FROM scratch
 WORKDIR /
