@@ -81,6 +81,7 @@ bin/bash \
 # System data files
 usr/share/zoneinfo \
 usr/share/ca-certificates \
+etc/ssl \
 run/systemd \
 # Dynamic libraries, as needed
 lib64 \
