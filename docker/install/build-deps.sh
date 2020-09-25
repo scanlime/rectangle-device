@@ -8,8 +8,6 @@ apt-get install -y \
   gcc \
   gdb \
   git \
-  go-md2man \
-  golang-go \
   iptables \
   libapparmor-dev \
   libassuan-dev \

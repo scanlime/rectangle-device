@@ -37,17 +37,10 @@ RUN adduser rectangle-device --disabled-login </dev/null >/dev/null 2>/dev/null
 USER builder:builder
 WORKDIR /home/builder
 
-# Build a fresh golang
+# Install a fresh binary golang package
 
 FROM builder as golang
-
-RUN \
-git clone https://go.googlesource.com/go /home/builder/go 2>&1 && \
-cd /home/builder/go && \
-git checkout tags/go1.15.2 2>&1
-RUN \
-cd /home/builder/go/src && \
-./all.bash
+RUN curl https://dl.google.com/go/go1.15.2.linux-amd64.tar.gz | tar zxf -
 
 # Build latest crun from git, with patches
 
@@ -191,6 +184,7 @@ etc/ssl \
 etc/passwd \
 etc/group \
 etc/shadow \
+etc/subuid \
 #
 # Dynamic libraries, as needed
 lib64 \
@@ -222,7 +216,7 @@ lib/x86_64-linux-gnu/libpcre.so.3
 RUN \
 mkdir image && \
 cd image && \
-tar xf ../image.tar && \
+tar pxf ../image.tar && \
 mkdir proc sys dev tmp var/tmp && \
 chmod 01777 tmp var/tmp
 
