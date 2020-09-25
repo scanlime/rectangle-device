@@ -226,10 +226,10 @@ tar xf ../image.tar && \
 mkdir proc sys dev tmp var/tmp && \
 chmod 01777 tmp var/tmp
 
-WORKDIR /
 FROM scratch
 COPY --from=builder /image/ /
-
+WORKDIR /
+ENV PATH /usr/sbin:/usr/bin:/sbin:/bin
 USER rectangle-device
 ENTRYPOINT [ "/usr/bin/rectangle-device" ]
 
