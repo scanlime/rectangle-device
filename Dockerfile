@@ -144,6 +144,8 @@ COPY --from=conmon /home/builder/conmon/bin/conmon /usr/bin/conmon
 
 COPY docker/podman/containers.conf /etc/containers/containers.conf
 COPY docker/podman/storage.conf /etc/containers/storage.conf
+COPY docker/podman/policy.json /etc/containers/policy.json
+COPY docker/podman/registries.conf /etc/containers/registries.conf
 
 # Pull initial set of transcode images as the app user
 
