@@ -49,14 +49,15 @@ RUN \
 cd /home/builder/go/src && \
 ./all.bash
 
-# Build latest crun from git
+# Build latest crun from git, with patches
 
 FROM builder as crun
-
 RUN \
 git clone https://github.com/containers/crun.git 2>&1
+COPY docker/patches/crun-context-no-new-keyring.patch crun/
 RUN \
 cd crun && \
+patch -p1 < crun-context-no-new-keyring.patch && \
 ./autogen.sh && \
 ./configure --prefix=/usr && \
 make
