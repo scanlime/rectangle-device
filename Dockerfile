@@ -1,25 +1,22 @@
-FROM ubuntu:20.04 AS builder
+ARG UBUNTU_RELEASE=20.04
+ARG RUSTUP_TOOLCHAIN=1.44.1
+ARG GOLANG_RELEASE=1.15.2
+ARG CRUN_TAG=0.15
+ARG PODMAN_TAG=v2.1.0-rc2
+ARG CONMON_TAG=v2.0.21
 
-ENV PATH \
-/home/builder/go/bin:\
-/home/builder/.cargo/bin:\
-/usr/local/sbin:\
-/usr/local/bin:\
-/usr/sbin:\
-/usr/bin:\
-/sbin:\
-/bin
+ARG DEFAULT_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+FROM ubuntu:${UBUNTU_RELEASE} AS builder
+ARG DEFAULT_PATH
+ENV PATH ${DEFAULT_PATH}
 ENV DEBIAN_FRONTEND noninteractive
 ENV DEBCONF_NONINTERACTIVE_SEEN true
-
-# Compatibility with windows build hosts
-
-RUN apt-get update && apt-get install -y dos2unix
 
 # Install distro packages
 
 WORKDIR /root
+RUN apt-get update && apt-get install -y dos2unix
 
 COPY docker/install/nodejs-current.sh ./
 RUN dos2unix -q nodejs-current.sh; bash ./nodejs-current.sh
@@ -37,16 +34,26 @@ RUN adduser rectangle-device --disabled-login </dev/null >/dev/null 2>/dev/null
 USER builder:builder
 WORKDIR /home/builder
 
-# Install a fresh binary golang package
+# Install official go binary package
 
 FROM builder as golang
-RUN curl https://dl.google.com/go/go1.15.2.linux-amd64.tar.gz | tar zxf -
+ARG DEFAULT_PATH
+ARG GOLANG_RELEASE
+ENV GOROOT /home/builder/dist/go
+ENV GOPATH /home/builder/go
+ENV PATH /home/builder/dist/go/bin:/home/builder/go/bin:${DEFAULT_PATH}
+RUN \
+mkdir dist && \
+cd dist && \
+curl https://dl.google.com/go/go${GOLANG_RELEASE}.linux-amd64.tar.gz | \
+tar zxf -
 
-# Build latest crun from git, with patches
+# Build crun from git, with patches
 
 FROM builder as crun
-RUN \
-git clone https://github.com/containers/crun.git 2>&1
+ARG CRUN_TAG
+
+RUN git clone https://github.com/containers/crun.git -b ${CRUN_TAG} 2>&1
 COPY docker/nested-podman/crun-context-no-new-keyring.patch crun/
 RUN \
 cd crun && \
@@ -55,23 +62,23 @@ patch -p1 < crun-context-no-new-keyring.patch && \
 ./configure --prefix=/usr && \
 make
 
-# Build latest conmon from git
+# Build conmon from git
 
 FROM golang as conmon
+ARG CONMON_TAG
 
-RUN \
-git clone https://github.com/containers/conmon 2>&1
+RUN git clone https://github.com/containers/conmon -b ${CONMON_TAG} 2>&1
 RUN \
 cd conmon && \
 export GOCACHE="$(mktemp -d)" && \
 make
 
-# Build latest podman from git, with patches
+# Build podman from git, with patches
 
 FROM golang as podman
+ARG PODMAN_TAG
 
-RUN \
-git clone https://github.com/containers/podman/ /home/builder/go/src/github.com/containers/podman
+RUN git clone https://github.com/containers/podman/ -b ${PODMAN_TAG} /home/builder/go/src/github.com/containers/podman
 COPY docker/nested-podman/podman-always-rootless.patch /home/builder/go/src/github.com/containers/podman
 COPY docker/nested-podman/podman-no-namespace-clone.patch /home/builder/go/src/github.com/containers/podman
 RUN \
@@ -86,17 +93,19 @@ cd /home/builder/go/src/github.com/containers/podman && \
 make install PREFIX=/usr
 USER builder:builder
 
-# Install latest stable rust
+# Install official rust binary package
 
 FROM builder as rust
-
+ARG DEFAULT_PATH
+ARG RUSTUP_TOOLCHAIN
 COPY --chown=builder docker/install/rustup-init.sh ./
+ENV RUSTUP_TOOLCHAIN ${RUSTUP_TOOLCHAIN}
 RUN dos2unix -q rustup-init.sh; ./rustup-init.sh -y 2>&1
+ENV PATH /home/builder/.cargo/bin:${DEFAULT_PATH}
 
 # Compile rust dependencies using a skeleton crate, for faster docker rebuilds
 
 FROM rust as skeleton
-
 COPY --chown=builder docker/skeleton/ ./
 COPY --chown=builder Cargo.lock ./
 RUN cargo build --release 2>&1
@@ -221,9 +230,10 @@ mkdir proc sys dev tmp var/tmp && \
 chmod 01777 tmp var/tmp
 
 FROM scratch
+ARG DEFAULT_PATH
 COPY --from=builder /image/ /
 WORKDIR /
-ENV PATH /usr/sbin:/usr/bin:/sbin:/bin
+ENV PATH ${DEFAULT_PATH}
 USER rectangle-device
 ENTRYPOINT [ "/usr/bin/rectangle-device" ]
 
