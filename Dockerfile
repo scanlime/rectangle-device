@@ -50,7 +50,7 @@ cd /home/builder/go/src && \
 # Build latest crun from git
 
 RUN \
-git clone https://github.com/containers/crun.git
+git clone https://github.com/containers/crun.git 2>&1
 RUN \
 cd crun && \
 ./autogen.sh && \
@@ -63,13 +63,13 @@ USER builder:builder
 # Build latest conmon from git
 
 RUN \
-git clone https://github.com/containers/conmon
+git clone https://github.com/containers/conmon 2>&1
 RUN \
 cd conmon && \
 export GOCACHE="$(mktemp -d)" && \
 make
 USER root
-RUN cd conmon && make install.podman
+RUN cd conmon && make PREFIX=/usr install.podman
 USER builder:builder
 
 # Build latest podman from git
@@ -158,7 +158,7 @@ bin/openssl \
 #
 # Podman container engine
 usr/bin/podman \
-usr/bin/conmon \
+usr/libexec/podman \
 usr/bin/crun \
 usr/bin/nsenter \
 etc/containers \
