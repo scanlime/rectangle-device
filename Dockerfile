@@ -69,7 +69,7 @@ cd conmon && \
 export GOCACHE="$(mktemp -d)" && \
 make
 USER root
-RUN cd conmon && make podman
+RUN cd conmon && make install.podman
 USER builder:builder
 
 # Build latest podman from git
