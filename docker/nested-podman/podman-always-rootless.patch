@@ -1,8 +1,16 @@
 diff --git a/pkg/rootless/rootless_linux.go b/pkg/rootless/rootless_linux.go
-index bbd797817..b062ec44f 100644
+index bbd797817..38be2a934 100644
 --- a/pkg/rootless/rootless_linux.go
 +++ b/pkg/rootless/rootless_linux.go
-@@ -44,31 +44,9 @@ func runInUser() error {
+@@ -13,7 +13,6 @@ import (
+ 	"os/user"
+ 	"runtime"
+ 	"strconv"
+-	"sync"
+ 	"unsafe"
+ 
+ 	"github.com/containers/podman/v2/pkg/errorhandling"
+@@ -44,31 +43,9 @@ func runInUser() error {
  	return os.Setenv("_CONTAINERS_USERNS_CONFIGURED", "done")
  }
  
