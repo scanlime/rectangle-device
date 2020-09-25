@@ -135,6 +135,7 @@ cd sandbox && cargo build --release 2>&1
 # Replace the skeleton with the real app and build it
 
 FROM skeleton as app
+COPY --chown=builder Cargo.toml Cargo.toml
 COPY --chown=builder src src
 RUN cargo build --release --bins 2>&1
 
