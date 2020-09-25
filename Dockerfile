@@ -111,21 +111,21 @@ RUN cargo build --release 2>&1
 
 # Compile workspace members separately, also for faster docker rebuilds
 
-COPY --chown=builder player ./player
+COPY --chown=builder player player
 COPY --chown=builder docker/skeleton/Cargo.toml ./
 RUN \
 echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "player" ]' >> Cargo.toml && \
 cd player && cargo build --release -vv 2>&1
 
-COPY --chown=builder blocks ./blocks
+COPY --chown=builder blocks blocks
 COPY --chown=builder docker/skeleton/Cargo.toml ./
 RUN \
 echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "blocks" ]' >> Cargo.toml && \
 cd blocks && cargo build --release 2>&1
 
-COPY --chown=builder sandbox ./sandbox
+COPY --chown=builder sandbox sandbox
 COPY --chown=builder docker/skeleton/Cargo.toml ./
 RUN \
 echo '[workspace]' >> Cargo.toml && \
@@ -135,7 +135,7 @@ cd sandbox && cargo build --release 2>&1
 # Replace the skeleton with the real app and build it
 
 FROM skeleton as app
-COPY --chown=builder . .
+COPY --chown=builder src src
 RUN cargo build --release --bins 2>&1
 
 # Post-build install and configure, as root again
@@ -143,7 +143,7 @@ RUN cargo build --release --bins 2>&1
 USER root
 RUN install target/release/rectangle-device /usr/bin/rectangle-device
 
-COPY --from=podman /etc/containers /etc/containers
+COPY --from=builder /etc/containers /etc/containers
 COPY --from=podman /usr/share/containers /usr/share/containers
 COPY --from=podman /var/run/containers /var/run/containers
 COPY --from=podman /var/lib/containers /var/lib/containers
