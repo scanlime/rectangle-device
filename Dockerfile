@@ -39,6 +39,8 @@ WORKDIR /home/builder
 
 # Build a fresh golang
 
+FROM builder as golang
+
 RUN \
 git clone https://go.googlesource.com/go /home/builder/go 2>&1 && \
 cd /home/builder/go && \
@@ -48,6 +50,8 @@ cd /home/builder/go/src && \
 ./all.bash
 
 # Build latest crun from git
+
+FROM builder as crun
 
 RUN \
 git clone https://github.com/containers/crun.git 2>&1
@@ -62,6 +66,8 @@ USER builder:builder
 
 # Build latest conmon from git
 
+FROM golang as conmon
+
 RUN \
 git clone https://github.com/containers/conmon 2>&1
 RUN \
@@ -73,6 +79,8 @@ RUN cd conmon && make PREFIX=/usr install.podman
 USER builder:builder
 
 # Build latest podman from git
+
+FROM golang as podman
 
 RUN \
 git clone https://github.com/containers/podman/ /home/builder/go/src/github.com/containers/podman
@@ -88,16 +96,22 @@ USER builder:builder
 
 # Install latest stable rust
 
+FROM builder as rust
+
 COPY --chown=builder docker/install/rustup-init.sh ./
 RUN dos2unix -q rustup-init.sh; ./rustup-init.sh -y 2>&1
 
 # Compile rust dependencies using a skeleton crate, for faster docker rebuilds
+
+FROM rust as skeleton
 
 COPY --chown=builder docker/skeleton/ ./
 COPY --chown=builder Cargo.lock ./
 RUN cargo build --release 2>&1
 
 # Compile workspace members separately, also for faster docker rebuilds
+
+FROM skeleton as player-crate
 
 COPY --chown=builder player ./player
 COPY --chown=builder docker/skeleton/Cargo.toml ./
@@ -106,12 +120,16 @@ echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "player" ]' >> Cargo.toml && \
 cd player && cargo build --release -vv 2>&1
 
+FROM skeleton as blocks-crate
+
 COPY --chown=builder blocks ./blocks
 COPY --chown=builder docker/skeleton/Cargo.toml ./
 RUN \
 echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "blocks" ]' >> Cargo.toml && \
 cd blocks && cargo build --release 2>&1
+
+FROM skeleton as sandbox-crate
 
 COPY --chown=builder sandbox ./sandbox
 COPY --chown=builder docker/skeleton/Cargo.toml ./
@@ -122,14 +140,26 @@ cd sandbox && cargo build --release 2>&1
 
 # Replace the skeleton with the real app and build it
 
-COPY --chown=builder Cargo.toml ./
-COPY --chown=builder src src
+FROM skeleton as app
+
+COPY --chown=builder --from=player-crate target/release/build/* target/release/build/
+COPY --chown=builder --from=blocks-crate target/release/build/* target/release/build/
+COPY --chown=builder --from=sandbox-crate target/release/build/* target/release/build/
+COPY --chown=builder . .
+
 RUN cargo build --release --bins 2>&1
 
 # Post-build install and configure, as root again
 
 USER root
 RUN install target/release/rectangle-device /usr/bin/rectangle-device
+
+COPY --from=podman /etc/containers /etc/containers
+COPY --from=podman /usr/share/containers /usr/share/containers
+COPY --from=podman /var/run/containers /var/run/containers
+COPY --from=podman /var/lib/containers /var/lib/containers
+COPY --from=podman /usr/bin/podman /usr/bin/podman
+COPY --from=crun /usr/libexec/podman /usr/libexec/podman
 
 COPY docker/podman/containers.conf /etc/containers/containers.conf
 COPY docker/podman/storage.conf /etc/containers/storage.conf
@@ -159,7 +189,6 @@ bin/openssl \
 # Podman container engine
 usr/bin/podman \
 usr/libexec/podman \
-usr/bin/crun \
 usr/bin/nsenter \
 etc/containers \
 usr/share/containers \
