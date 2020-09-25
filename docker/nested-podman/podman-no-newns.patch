@@ -1,0 +1,13 @@
+diff --git a/pkg/rootless/rootless_linux.c b/pkg/rootless/rootless_linux.c
+index 2e1fddc48..ac8a559d5 100644
+--- a/pkg/rootless/rootless_linux.c
++++ b/pkg/rootless/rootless_linux.c
+@@ -797,7 +797,7 @@ reexec_in_user_namespace (int ready, char *pause_pid_file_path, char *file_to_re
+   sprintf (uid, "%d", geteuid ());
+   sprintf (gid, "%d", getegid ());
+ 
+-  pid = syscall_clone (CLONE_NEWUSER|CLONE_NEWNS|SIGCHLD, NULL);
++  pid = syscall_clone (CLONE_NEWUSER|/*CLONE_NEWNS|*/SIGCHLD, NULL);
+   if (pid < 0)
+     {
+       fprintf (stderr, "cannot clone: %s\n", strerror (errno));

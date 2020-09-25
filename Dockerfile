@@ -80,9 +80,11 @@ FROM golang as podman
 RUN \
 git clone https://github.com/containers/podman/ /home/builder/go/src/github.com/containers/podman
 COPY docker/nested-podman/podman-always-rootless.patch /home/builder/go/src/github.com/containers/podman
+COPY docker/nested-podman/podman-no-newns.patch /home/builder/go/src/github.com/containers/podman
 RUN \
 cd /home/builder/go/src/github.com/containers/podman && \
 patch -p1 < podman-always-rootless.patch && \
+patch -p1 < podman-no-newns.patch && \
 export GOPATH=/home/builder/go && \
 make BUILDTAGS="selinux seccomp -systemd"
 USER root
