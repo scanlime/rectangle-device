@@ -111,8 +111,6 @@ RUN cargo build --release 2>&1
 
 # Compile workspace members separately, also for faster docker rebuilds
 
-FROM skeleton as player-crate
-
 COPY --chown=builder player ./player
 COPY --chown=builder docker/skeleton/Cargo.toml ./
 RUN \
@@ -120,16 +118,12 @@ echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "player" ]' >> Cargo.toml && \
 cd player && cargo build --release -vv 2>&1
 
-FROM skeleton as blocks-crate
-
 COPY --chown=builder blocks ./blocks
 COPY --chown=builder docker/skeleton/Cargo.toml ./
 RUN \
 echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "blocks" ]' >> Cargo.toml && \
 cd blocks && cargo build --release 2>&1
-
-FROM skeleton as sandbox-crate
 
 COPY --chown=builder sandbox ./sandbox
 COPY --chown=builder docker/skeleton/Cargo.toml ./
@@ -141,12 +135,7 @@ cd sandbox && cargo build --release 2>&1
 # Replace the skeleton with the real app and build it
 
 FROM skeleton as app
-
-COPY --chown=builder --from=player-crate target/release/build/* target/release/build/
-COPY --chown=builder --from=blocks-crate target/release/build/* target/release/build/
-COPY --chown=builder --from=sandbox-crate target/release/build/* target/release/build/
 COPY --chown=builder . .
-
 RUN cargo build --release --bins 2>&1
 
 # Post-build install and configure, as root again
