@@ -60,9 +60,6 @@ cd crun && \
 ./autogen.sh && \
 ./configure --prefix=/usr && \
 make
-USER root
-RUN cd crun && make install
-USER builder:builder
 
 # Build latest conmon from git
 
@@ -74,9 +71,6 @@ RUN \
 cd conmon && \
 export GOCACHE="$(mktemp -d)" && \
 make
-USER root
-RUN cd conmon && make PREFIX=/usr install.podman
-USER builder:builder
 
 # Build latest podman from git
 
@@ -144,12 +138,9 @@ RUN cargo build --release --bins 2>&1
 USER root
 RUN install target/release/rectangle-device /usr/bin/rectangle-device
 
-COPY --from=builder /etc/containers /etc/containers
-COPY --from=podman /usr/share/containers /usr/share/containers
-COPY --from=podman /var/run/containers /var/run/containers
-COPY --from=podman /var/lib/containers /var/lib/containers
 COPY --from=podman /usr/bin/podman /usr/bin/podman
-COPY --from=crun /usr/libexec/podman /usr/libexec/podman
+COPY --from=crun /home/builder/crun/crun /usr/bin/crun
+COPY --from=conmon /home/builder/conmon/bin/conmon /usr/bin/conmon
 
 COPY docker/podman/containers.conf /etc/containers/containers.conf
 COPY docker/podman/storage.conf /etc/containers/storage.conf
