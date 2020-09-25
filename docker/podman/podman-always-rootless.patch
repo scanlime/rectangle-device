@@ -1,0 +1,37 @@
+diff --git a/pkg/rootless/rootless_linux.go b/pkg/rootless/rootless_linux.go
+index bbd797817..b062ec44f 100644
+--- a/pkg/rootless/rootless_linux.go
++++ b/pkg/rootless/rootless_linux.go
+@@ -44,31 +44,9 @@ func runInUser() error {
+ 	return os.Setenv("_CONTAINERS_USERNS_CONFIGURED", "done")
+ }
+ 
+-var (
+-	isRootlessOnce sync.Once
+-	isRootless     bool
+-)
+-
+ // IsRootless tells us if we are running in rootless mode
+ func IsRootless() bool {
+-	isRootlessOnce.Do(func() {
+-		rootlessUIDInit := int(C.rootless_uid())
+-		rootlessGIDInit := int(C.rootless_gid())
+-		if rootlessUIDInit != 0 {
+-			// This happens if we joined the user+mount namespace as part of
+-			if err := os.Setenv("_CONTAINERS_USERNS_CONFIGURED", "done"); err != nil {
+-				logrus.Errorf("failed to set environment variable %s as %s", "_CONTAINERS_USERNS_CONFIGURED", "done")
+-			}
+-			if err := os.Setenv("_CONTAINERS_ROOTLESS_UID", fmt.Sprintf("%d", rootlessUIDInit)); err != nil {
+-				logrus.Errorf("failed to set environment variable %s as %d", "_CONTAINERS_ROOTLESS_UID", rootlessUIDInit)
+-			}
+-			if err := os.Setenv("_CONTAINERS_ROOTLESS_GID", fmt.Sprintf("%d", rootlessGIDInit)); err != nil {
+-				logrus.Errorf("failed to set environment variable %s as %d", "_CONTAINERS_ROOTLESS_GID", rootlessGIDInit)
+-			}
+-		}
+-		isRootless = os.Geteuid() != 0 || os.Getenv("_CONTAINERS_USERNS_CONFIGURED") != ""
+-	})
+-	return isRootless
++	return true
+ }
+ 
+ // GetRootlessUID returns the UID of the user in the parent userNS

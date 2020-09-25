@@ -54,7 +54,7 @@ cd /home/builder/go/src && \
 FROM builder as crun
 RUN \
 git clone https://github.com/containers/crun.git 2>&1
-COPY docker/patches/crun-context-no-new-keyring.patch crun/
+COPY docker/podman/crun-context-no-new-keyring.patch crun/
 RUN \
 cd crun && \
 patch -p1 < crun-context-no-new-keyring.patch && \
@@ -73,14 +73,16 @@ cd conmon && \
 export GOCACHE="$(mktemp -d)" && \
 make
 
-# Build latest podman from git
+# Build latest podman from git, with patches
 
 FROM golang as podman
 
 RUN \
 git clone https://github.com/containers/podman/ /home/builder/go/src/github.com/containers/podman
+COPY docker/podman/podman-always-rootless.patch /home/builder/go/src/github.com/containers/podman
 RUN \
 cd /home/builder/go/src/github.com/containers/podman && \
+patch -p1 < podman-always-rootless.patch && \
 export GOPATH=/home/builder/go && \
 make BUILDTAGS="selinux seccomp -systemd"
 USER root
