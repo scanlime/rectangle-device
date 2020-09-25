@@ -81,7 +81,7 @@ git clone https://github.com/containers/podman/ /home/builder/go/src/github.com/
 RUN \
 cd /home/builder/go/src/github.com/containers/podman && \
 export GOPATH=/home/builder/go && \
-make BUILDTAGS="selinux seccomp"
+make BUILDTAGS="selinux seccomp -systemd"
 USER root
 RUN \
 cd /home/builder/go/src/github.com/containers/podman && \
