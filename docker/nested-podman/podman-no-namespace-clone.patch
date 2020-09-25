@@ -7,7 +7,7 @@ index 2e1fddc48..ac8a559d5 100644
    sprintf (gid, "%d", getegid ());
  
 -  pid = syscall_clone (CLONE_NEWUSER|CLONE_NEWNS|SIGCHLD, NULL);
-+  pid = syscall_clone (CLONE_NEWUSER|/*CLONE_NEWNS|*/SIGCHLD, NULL);
++  pid = syscall_clone (/*CLONE_NEWUSER|CLONE_NEWNS|*/SIGCHLD, NULL);
    if (pid < 0)
      {
        fprintf (stderr, "cannot clone: %s\n", strerror (errno));
