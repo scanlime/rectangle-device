@@ -169,10 +169,11 @@ RUN tar chvf image.tar \
 usr/bin/rectangle-device \
 home/rectangle-device \
 #
-# System tools
+# System binaries, as needed
 bin/ls \
 bin/ldd \
 bin/openssl \
+usr/bin/newuidmap \
 #
 # Podman container engine
 usr/bin/podman \
