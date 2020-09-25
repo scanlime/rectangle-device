@@ -54,7 +54,7 @@ cd /home/builder/go/src && \
 FROM builder as crun
 RUN \
 git clone https://github.com/containers/crun.git 2>&1
-COPY docker/podman/crun-context-no-new-keyring.patch crun/
+COPY docker/nested-podman/crun-context-no-new-keyring.patch crun/
 RUN \
 cd crun && \
 patch -p1 < crun-context-no-new-keyring.patch && \
@@ -79,7 +79,7 @@ FROM golang as podman
 
 RUN \
 git clone https://github.com/containers/podman/ /home/builder/go/src/github.com/containers/podman
-COPY docker/podman/podman-always-rootless.patch /home/builder/go/src/github.com/containers/podman
+COPY docker/nested-podman/podman-always-rootless.patch /home/builder/go/src/github.com/containers/podman
 RUN \
 cd /home/builder/go/src/github.com/containers/podman && \
 patch -p1 < podman-always-rootless.patch && \
@@ -145,10 +145,10 @@ COPY --from=podman /usr/bin/podman /usr/bin/podman
 COPY --from=crun /home/builder/crun/crun /usr/bin/crun
 COPY --from=conmon /home/builder/conmon/bin/conmon /usr/bin/conmon
 
-COPY docker/podman/containers.conf /etc/containers/containers.conf
-COPY docker/podman/storage.conf /etc/containers/storage.conf
-COPY docker/podman/policy.json /etc/containers/policy.json
-COPY docker/podman/registries.conf /etc/containers/registries.conf
+COPY docker/nested-podman/containers.conf /etc/containers/containers.conf
+COPY docker/nested-podman/storage.conf /etc/containers/storage.conf
+COPY docker/nested-podman/policy.json /etc/containers/policy.json
+COPY docker/nested-podman/registries.conf /etc/containers/registries.conf
 
 # Pull initial set of transcode images as the app user
 
