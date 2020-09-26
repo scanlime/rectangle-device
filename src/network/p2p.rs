@@ -2,6 +2,7 @@
 
 use crate::config;
 use crate::warmer::Warmer;
+use crate::pinner::Pinner;
 use rectangle_device_blocks::{BlockUsage, BlockInfo};
 use async_std::sync::Receiver;
 use core::pin::Pin;
@@ -28,6 +29,9 @@ use std::convert::TryFrom;
 use std::error::Error;
 use std::process::{Command, Stdio};
 
+const GOSSIPSUB_TOPIC : &'static str = "rectangle-net";
+const NETWORK_IDENTITY : &'static str = "rectangle-device";
+
 #[derive(Eq, Debug, Clone)]
 struct BlockSendKey {
     pub usage: BlockUsage,
@@ -53,10 +57,20 @@ impl PartialEq for BlockSendKey {
     }
 }
 
+pub struct P2PConfig {
+    pub pinning_services: Vec<String>
+    pub pinning_gateways: Vec<String>,
+    pub public_gateways: Vec<String>,
+    pub router_peers: Vec<String>,
+    pub bootstrap_peers: Vec<String>,
+}
+
 pub struct P2PVideoNode {
     gossipsub_topic: gossipsub::Topic,
-    pub swarm: Swarm<P2PVideoBehaviour>,
     warmer: Warmer,
+    pinner: Pinner,
+    swarm: Swarm<P2PVideoBehaviour>,
+    config: P2PConfig,
 }
 
 #[derive(NetworkBehaviour)]
@@ -172,38 +186,35 @@ fn kad_store_config() -> MemoryStoreConfig {
     config
 }
 
-fn keypair_from_openssl_rsa() -> Result<Keypair, Box<dyn Error>> {
-    // This is a temporary hack.
-    // I'm using an RSA keypair because the new elliptic curve
-    // based identity seems to break p2p-circuit routing in go-ipfs?
-
-    log::info!("generating key pair");
-
-    let mut genpkey = Command::new("openssl")
-        .arg("genpkey").arg("-algorithm").arg("RSA")
-        .arg("-pkeyopt").arg("rsa_keygen_bits:2048")
-        .arg("-pkeyopt").arg("rsa_keygen_pubexp:65537")
-        .stdout(Stdio::piped())
-        .spawn().unwrap();
-
-    let pkcs8 = Command::new("openssl")
-        .arg("pkcs8").arg("-topk8").arg("-nocrypt")
-        .arg("-outform").arg("der")
-        .stdin(Stdio::from(genpkey.stdout.take().unwrap()))
-        .output().unwrap();
-
-    let mut data = pkcs8.stdout.as_slice().to_vec();
-    Ok(Keypair::rsa_from_pkcs8(&mut data)?)
-}
 
 impl P2PVideoNode {
-    pub fn new(block_receiver: Receiver<BlockInfo>, warmer: Warmer) -> Result<P2PVideoNode, Box<dyn Error>> {
+    pub fn new(block_receiver: Receiver<BlockInfo>, config: P2PConfig) -> Result<P2PVideoNode, Box<dyn Error>> {
 
-        let local_key = keypair_from_openssl_rsa()?;
+        let (pin_sender, pin_r
+            eceiver) = channel(128);
+
+        let pinner = Pinner::new();
+        let warmer = Warmer::new();
+
+        let player_net = node.configure_player();
+
+        let ingest = ingest::VideoIngest::new(block_sender, pin_sender, player_net);
+        let pinner = pinner::Pinner { pinning_api, pin_receiver, local_multiaddrs };
+
+        thread::Builder::new().name("warmer".to_string()).spawn(move || {
+            tokio::runtime::Runtime::new().unwrap().block_on(warmer.task());
+        })?;
+
+        thread::Builder::new().name("pinner".to_string()).spawn(move || {
+            tokio::runtime::Runtime::new().unwrap().block_on(pinner.task());
+        })?;}
+
+
+        let local_key = keypair::keypair_from_openssl_rsa()?;
         let local_peer_id = PeerId::from(local_key.public());
         log::info!("local identity is {}", local_peer_id.to_string());
 
-        let gossipsub_topic = gossipsub::Topic::new(config::GOSSIPSUB_TOPIC.into());
+        let gossipsub_topic = gossipsub::Topic::new(GOSSIPSUB_TOPIC.into());
         let transport = libp2p::build_development_transport(local_key.clone())?;
         let mut kad_config : KademliaConfig = Default::default();
         const KAD_LAN : &[u8] = b"/ipfs/lan/kad/1.0.0";
@@ -216,7 +227,7 @@ impl P2PVideoNode {
             ),
             identify: Identify::new(
                 "/ipfs/0.1.0".into(),
-                config::NETWORK_IDENTITY.into(),
+                NETWORK_IDENTITY.into(),
                 local_key.public(),
             ),
             ping: Ping::new(PingConfig::new()),
@@ -273,16 +284,67 @@ impl P2PVideoNode {
         self.swarm.block_store.insert(hash_bytes, block_info);
 
         self.warmup_block(cid, usage);
+        self.pin_block(cid, usage);
     }
 
-    fn warmup_block(&self, cid: Cid, usage: BlockUsage) {
+    self.pin_sender.send(player_cid).await;
+
+    fn warmup_block(&self, cid: &Cid, usage: BlockUsage) {
         let cid_str = cid.to_string();
-        self.warmer.send(format!("http://{}/ipfs/{}", config::IPFS_LOCAL_GATEWAY, cid_str));
+
+        // Load this block into all gateways that we expect to pin this block eventually
+        for gateway in &self.pinning_gateways {
+            self.warmer.send(format!("http://{}/ipfs/{}", gateway, cid_str));
+        }
+
         match usage {
             BlockUsage::VideoSegment(_) => (),
-            _ =>  self.warmer.send(format!("https://{}.ipfs.{}", cid_str, config::IPFS_GATEWAY))
+            _ => {
+                for gateway in &self.public_gateways {
+                    // Only send non-video (player, directory) blocks to public gateways
+                    self.warmer.send(format!("https://{}.ipfs.{}", cid_str, gateway));
+                }
+            }
         }
     }
+
+    fn pin_block(&self, cid: &Cid, usage: BlockUsage) {
+        match usage {
+            BlockUsage::PlayerDirectory(_) => {
+                // Only pin the top-most object; player directories link to everything else
+                self.pin_sender.send(cid.clone()).await;
+            },
+            _ => {}
+        }
+    }
+
+    pub fn configure_player(&self) -> PlayerNetworkConfig {
+        PlayerNetworkConfig {
+            ipfs_gateway: "".to_string(),
+            ipfs_delegates: "".to_string(),
+            ipfs_bootstrap: "".to_string(),
+        }
+    }
+
+    pub fn local_multiaddrs(&self) -> Vec<String> {
+        let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
+        let local_multiaddrs = local_multiaddrs(&local_peer_id);
+        vec![
+            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                router_addr = IPFS_ROUTER_ADDR_TCP,
+                router_id = IPFS_ROUTER_ID,
+                local_id = local_peer_id),
+            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                router_addr = IPFS_ROUTER_ADDR_UDP,
+                router_id = IPFS_ROUTER_ID,
+                local_id = local_peer_id),
+            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                router_addr = IPFS_ROUTER_ADDR_WSS,
+                router_id = IPFS_ROUTER_ID,
+                local_id = local_peer_id)
+        ]
+    }
+
 }
 
 impl Future for P2PVideoNode {

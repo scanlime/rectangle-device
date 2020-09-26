@@ -1,20 +1,19 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
+use rectangle_device_blocks::{Cid, BlockUsage, BlockInfo, BLOCK_MAX_BYTES};
+use rectangle_device_blocks::raw::RawBlockFile;
+use rectangle_device_blocks::package::Package;
+use rectangle_device_sandbox::{ffmpeg, socket::SocketPool};
+
+use crate::media::{MediaBlockInfo, MediaContainer};
+use crate::media::hls::{HLSContainer, SEGMENT_MIN_SEC, SEGMENT_MAX_SEC};
+use crate::media::html::{PlayerNetworkConfig, HLSPlayer, HLSPlayerDist};
+
 use async_std::io::ReadExt;
 use async_std::os::unix::net::UnixStream;
 use async_std::stream::StreamExt;
 use async_std::sync::Sender;
 use async_std::task;
-use rectangle_device_blocks::{BlockUsage, BlockInfo, BLOCK_MAX_BYTES};
-use rectangle_device_blocks::raw::RawBlockFile;
-use rectangle_device_blocks::package::Package;
-use rectangle_device_sandbox::{ffmpeg, socket::SocketPool};
-use crate::config;
-use crate::media::{MediaBlockInfo, MediaContainer};
-use crate::media::hls::HLSContainer;
-use crate::media::html::{HLSPlayer, HLSPlayerDist};
-use libipld::Cid;
-use libp2p::PeerId;
 use mpeg2ts::time::ClockReference;
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
 use std::error::Error;
@@ -23,10 +22,11 @@ use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+pub const PUBLISH_INTERVAL_SEC : u64 = 30;
+
 pub struct VideoIngest {
     block_sender: Sender<BlockInfo>,
-    pin_sender: Sender<Cid>,
-    local_peer_id: PeerId,
+    player_net: PlayerNetworkConfig,
 
     hls_dist: HLSPlayerDist,
     mc: MediaContainer,
@@ -47,9 +47,9 @@ pub enum VideoIngestError {
 }
 
 impl VideoIngest {
-    pub fn new(block_sender: Sender<BlockInfo>, pin_sender: Sender<Cid>, local_peer_id: PeerId) -> VideoIngest {
+    pub fn new(block_sender: Sender<BlockInfo>, player_net: PlayerNetworkConfig) -> VideoIngest {
         let hls_dist = HLSPlayerDist::new();
-        let publish_interval = Duration::from_secs(config::PUBLISH_INTERVAL_SEC);
+        let publish_interval = Duration::from_secs(PUBLISH_INTERVAL_SEC);
         let next_publish_at = Instant::now() + publish_interval;
         let mc = MediaContainer { blocks: vec![] };
         VideoIngest {
@@ -57,7 +57,7 @@ impl VideoIngest {
             block_sender,
             pin_sender,
             hls_dist,
-            local_peer_id,
+            player_net,
             next_publish_at,
             publish_interval,
             clock_latest: None,
@@ -72,7 +72,7 @@ impl VideoIngest {
             image: ffmpeg::default_image(),
             args,
             allow_networking: true,
-            segment_time: config::SEGMENT_MIN_SEC,
+            segment_time: SEGMENT_MIN_SEC,
         };
         let mc = task::block_on(self.task(tc))?;
         log::trace!("finished successfully");
@@ -81,17 +81,16 @@ impl VideoIngest {
 
     async fn send_player(&self) {
         let hls = HLSContainer::new(&self.mc);
-        let player = HLSPlayer::from_hls(&hls, &self.hls_dist, &self.local_peer_id);
+        let player = HLSPlayer::from_hls(&hls, &self.hls_dist, &self.player_net);
         let player_cid = player.directory.block.cid.clone();
 
         log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
             player_cid.to_string(),
-            config::IPFS_GATEWAY,
+            self.player_net.ipfs_gateway,
             player.directory.total_size());
 
         hls.send(&self.block_sender).await;
         player.send(&self.block_sender).await;
-        self.pin_sender.send(player_cid).await;
     }
 
     async fn push_video_block(&mut self, data: &[u8], duration: f32) {
@@ -200,7 +199,7 @@ impl VideoIngest {
 
                 // Split this segment into smaller blocks when we need to
                 if write_position + TsPacket::SIZE > BLOCK_MAX_BYTES ||
-                    self.latest_segment_duration() >= config::SEGMENT_MAX_SEC {
+                    self.latest_segment_duration() >= SEGMENT_MAX_SEC {
 
                     // Generate a block which ends just before 'packet'
                     self.push_video_block(

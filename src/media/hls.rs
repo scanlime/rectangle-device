@@ -1,6 +1,5 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use crate::config;
 use crate::media::MediaContainer;
 use rectangle_device_blocks::{BlockInfo, BlockUsage, PbLink};
 use rectangle_device_blocks::raw::RawBlockFile;
@@ -8,6 +7,10 @@ use rectangle_device_blocks::dir::DirectoryBlock;
 use rectangle_device_blocks::package::Package;
 use m3u8_rs::playlist::{MediaPlaylist, MediaSegment, MediaPlaylistType};
 use async_std::sync::Sender;
+
+pub const HLS_FILENAME : &'static str = "index.m3u8";
+pub const SEGMENT_MIN_SEC : f32 = 2.0;
+pub const SEGMENT_MAX_SEC : f32 = 5.0;
 
 pub struct HLSContainer {
     pub playlist: RawBlockFile,
@@ -42,7 +45,7 @@ impl HLSContainer {
         // https://tools.ietf.org/html/rfc8216
         let hls_playlist = MediaPlaylist {
             version: 3,
-            target_duration: config::SEGMENT_MAX_SEC,
+            target_duration: SEGMENT_MAX_SEC,
             // To Do: Want to set this to true but it would be a lie until we can split h264 too
             independent_segments: false,
             media_sequence: 0,
@@ -57,7 +60,7 @@ impl HLSContainer {
         let playlist = RawBlockFile::new(&playlist_data);
 
         // Put the HLS playlist link first in the directory
-        links.insert(0, playlist.link(config::HLS_FILENAME.to_string()));
+        links.insert(0, playlist.link(HLS_FILENAME.to_string()));
 
         HLSContainer {
             playlist: playlist,

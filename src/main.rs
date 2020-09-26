@@ -4,42 +4,39 @@ use rectangle_device::{config, ingest, network, pinner, warmer};
 use async_std::sync::channel;
 use async_std::task;
 use env_logger::Env;
-use libp2p::Swarm;
 use std::error::Error;
 use std::thread;
 
+// Input, as a partial ffmpeg command line. Note that filenames here are parsed according to
+// libavformat's protocol rules. This can be overridden by giving a command line.
+fn default_args() -> Vec<String> {
+    vec![
+        "-i".to_string(), "https://live.diode.zone/hls/eyesopod/index.m3u8".to_string(),
+        "-c".to_string(), "copy".to_string()
+    ]
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::from_env(Env::default().default_filter_or("rectangle_device::ingest=info")).init();
-    let video_args : Vec<String> = std::env::args().skip(1).collect();
-
-    // Increase the file limit if we can, the p2p networking uses a ton of sockets
     file_limit::set_to_max()?;
 
+    let video_args : Vec<String> = std::env::args().skip(1).collect();
+
     let (block_sender, block_receiver) = channel(16);
-    let (pin_sender, pin_receiver) = channel(128);
 
-    let warmer = warmer::Warmer::new();
-    let node = network::P2PVideoNode::new(block_receiver, warmer.clone())?;
-    let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
-    let local_multiaddrs = config::local_multiaddrs(&local_peer_id);
+    let config = P2PConfig {
+        pinning_services: vec!["http://99.149.215.66:5000/api/v1".to_string()],
+        pinning_gateways: vec![],
+        public_gateways: vec![],
+        router_peers: vec![],
+        bootstrap_peers: vec![],
+    };
 
-    let ingest = ingest::VideoIngest::new(block_sender, pin_sender, local_peer_id.clone());
-    let pinner = pinner::Pinner { pin_receiver, local_multiaddrs };
-
-    thread::Builder::new().name("warmer".to_string()).spawn(move || {
-        tokio::runtime::Runtime::new().unwrap().block_on(warmer.task());
-    })?;
-
-    thread::Builder::new().name("pinner".to_string()).spawn(move || {
-        tokio::runtime::Runtime::new().unwrap().block_on(pinner.task());
-    })?;
+    let node = network::P2PVideoNode::new(block_receiver, config)?;
+    let ingest = ingest::VideoIngest::new(block_sender, node.configure_player());
 
     thread::Builder::new().name("vid-in".to_string()).spawn(move || {
-        let args = if video_args.len() == 0 {
-            config::default_args()
-        } else {
-            video_args
-        };
+        let args = if video_args.len() == 0 default_args() else video_args;
         ingest.run(args).unwrap();
     })?;
 

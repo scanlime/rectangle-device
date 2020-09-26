@@ -1,27 +1,27 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use crate::config;
-use crate::media::hls::HLSContainer;
-use libipld::cid::Cid;
-use libp2p::PeerId;
+use crate::media::hls::{HLSContainer, HLS_FILENAME};
 use async_std::sync::Sender;
-use rectangle_device_blocks::{BlockInfo, BlockUsage, PbLink};
+use rectangle_device_blocks::{Cid, BlockInfo, BlockUsage, PbLink};
 use rectangle_device_blocks::raw::{RawBlockFile, MultiRawBlockFile};
 use rectangle_device_blocks::dir::DirectoryBlock;
 use rectangle_device_blocks::package::Package;
 use rectangle_device_player::{IndexTemplate, Template, main_js};
 
-fn index_html_template(hls_cid: &Cid, script_cid: &Cid, local_peer_id: &PeerId) -> String {
-    let router_multiaddr = format!("{}/p2p/{}", config::IPFS_ROUTER_ADDR_WSS, config::IPFS_ROUTER_ID);
-    let bootstrap = format!("{} {}/p2p-circuit/p2p/{}", router_multiaddr, router_multiaddr, local_peer_id.to_string());
-    IndexTemplate {
-        main_js_cid: &script_cid.to_string(),
-        ipfs_gateway: config::IPFS_GATEWAY,
-        ipfs_delegates: &router_multiaddr,
-        ipfs_bootstrap: &bootstrap,
-        hls_cid: &hls_cid.to_string(),
-        hls_name: config::HLS_FILENAME,
-    }.render().unwrap()
+pub const JS_FILENAME : &'static str = "main.js";
+pub const HTML_FILENAME : &'static str = "index.html";
+pub const HLS_DIRECTORY : &'static str = "video";
+
+pub struct PlayerNetworkConfig {
+    pub ipfs_gateway: String,
+    pub ipfs_delegates: String,
+    pub ipfs_bootstrap: String,
+}
+
+pub struct HLSPlayer {
+    pub html: RawBlockFile,
+    pub directory: DirectoryBlock,
+    pub sequence: usize
 }
 
 pub struct HLSPlayerDist {
@@ -33,7 +33,7 @@ impl HLSPlayerDist {
     pub fn new() -> HLSPlayerDist {
         let script = MultiRawBlockFile::from_bytes(main_js().as_bytes());
         let links = vec![
-            script.link(config::JS_FILENAME.to_string()),
+            script.link(JS_FILENAME.to_string()),
         ];
         HLSPlayerDist { script, links }
     }
@@ -43,29 +43,31 @@ impl HLSPlayerDist {
     }
 }
 
-pub struct HLSPlayer {
-    pub html: RawBlockFile,
-    pub directory: DirectoryBlock,
-    pub sequence: usize
-}
-
 impl HLSPlayer {
-    pub fn from_hls(hls: &HLSContainer, dist: &HLSPlayerDist, local_peer_id: &PeerId) -> HLSPlayer {
+    pub fn from_hls(hls: &HLSContainer, dist: &HLSPlayerDist, network: &PlayerNetworkConfig) -> HLSPlayer {
         HLSPlayer::from_link(
-            hls.directory.link(config::HLS_DIRECTORY.to_string()),
+            hls.directory.link(HLS_DIRECTORY.to_string()),
             &dist.script.root.cid,
             &dist.links,
             hls.sequence,
-            local_peer_id)
+            network)
     }
 
     pub fn from_link(hls_link: PbLink, script_cid: &Cid, added_links: &Vec<PbLink>,
-        sequence: usize, local_peer_id: &PeerId) -> HLSPlayer {
+        sequence: usize, network: &PlayerNetworkConfig) -> HLSPlayer {
 
-        let html_string = index_html_template(&hls_link.cid, script_cid, local_peer_id);
+        let html_string = IndexTemplate {
+            ipfs_gateway: &network.ipfs_gateway,
+            ipfs_delegates: &network.ipfs_delegates,
+            ipfs_bootstrap: &network.ipfs_bootstrap,
+            hls_cid: &hls_link.cid.to_string(),
+            main_js_cid: &script_cid.to_string(),
+            hls_name: HLS_FILENAME,
+        }.render().unwrap();
+
         let html = RawBlockFile::new(&html_string.as_bytes());
         let mut links = vec![
-            html.link("index.html".to_string()),
+            html.link(HTML_FILENAME.to_string()),
             hls_link
         ];
 
