@@ -57,6 +57,7 @@ impl PartialEq for BlockSendKey {
     }
 }
 
+#[derive(Debug)]
 pub struct P2PConfig {
     pub pinning_services: Vec<String>,
     pub pinning_gateways: Vec<String>,

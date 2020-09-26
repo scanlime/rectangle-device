@@ -20,8 +20,11 @@ fn arg_values<S: AsRef<str>>(matches: &ArgMatches, name: S) -> Vec<String> {
 fn main() -> Result<(), Box<dyn Error>> {
     let yaml = load_yaml!("cli.yml");
     let matches = App::from_yaml(yaml).get_matches();
+
     let log_level = matches.value_of("log_level").unwrap();
-    let video_args = arg_values(&matches, "video_args");
+    from_env(Env::default().default_filter_or(log_level)).init();
+    file_limit::set_to_max()?;
+
     let config = P2PConfig {
         pinning_services: arg_values(&matches, "pinning_services"),
         pinning_gateways: arg_values(&matches, "pinning_gateways"),
@@ -29,12 +32,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         router_peers: arg_values(&matches, "router_peers"),
         additional_peers: arg_values(&matches, "additional_peers"),
     };
-
-    from_env(Env::default().default_filter_or(log_level)).init();
-    file_limit::set_to_max()?;
+    log::info!("{:?}", config);
 
     let (block_sender, block_receiver) = channel(16);
     let node = P2PVideoNode::new(block_receiver, config)?;
+
+    let video_args = arg_values(&matches, "video_args");
     VideoIngest::new(block_sender, node.configure_player()).run(video_args)?;
     node.run_blocking()?;
 
