@@ -16,16 +16,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         "-c".to_string(), "copy".to_string()
     ]};
 
-    let (block_sender, block_receiver) = channel(16);
-
     let config = P2PConfig {
         pinning_services: vec!["http://99.149.215.66:5000/api/v1".to_string()],
-        pinning_gateways: vec![],
-        public_gateways: vec![],
-        router_peers: vec![],
-        bootstrap_peers: vec![],
+        pinning_gateways: vec!["99.149.215.66:8080".to_string()],
+        public_gateways: vec!["cf-ipfs.com".to_string(), "ipfs.io".to_string()],
+        router_peers: vec!["/ip4/99.149.215.66/tcp/4001/QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5".to_string()],
+        additional_peers: vec![],
     };
 
+    let (block_sender, block_receiver) = channel(16);
     let node = P2PVideoNode::new(block_receiver, config)?;
     VideoIngest::new(block_sender, node.configure_player()).run(video_args)?;
     node.run_blocking()?;

@@ -62,7 +62,7 @@ pub struct P2PConfig {
     pub pinning_gateways: Vec<String>,
     pub public_gateways: Vec<String>,
     pub router_peers: Vec<String>,
-    pub bootstrap_peers: Vec<String>,
+    pub additional_peers: Vec<String>,
 }
 
 pub struct P2PVideoNode {
@@ -312,26 +312,11 @@ impl P2PVideoNode {
         match usage {
             BlockUsage::PlayerDirectory(_) => {
                 // Only pin the top-most object; player directories link to everything else
-
-                let origins = vec![
-/*
-                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                        router_addr = IPFS_ROUTER_ADDR_TCP,
-                        router_id = IPFS_ROUTER_ID,
-                        local_id = local_peer_id),
-                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                        router_addr = IPFS_ROUTER_ADDR_UDP,
-                        router_id = IPFS_ROUTER_ID,
-                        local_id = local_peer_id),
-                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                        router_addr = IPFS_ROUTER_ADDR_WSS,
-                        router_id = IPFS_ROUTER_ID,
-                        local_id = local_peer_id)
-*/
-                ];
-
                 for api in &self.config.pinning_services {
-                    self.pinner.send(api.clone(), cid.to_string(), format!("{:?}", usage), origins.clone());
+                    let peer_id = Swarm::local_peer_id(&self.swarm);
+                    let addrs = Swarm::external_addresses(&self.swarm);
+                    let origins: Vec<String> = addrs.map(|addr| format!("{}/p2p/{}", addr, peer_id)).collect();
+                    self.pinner.send(api.clone(), cid.to_string(), format!("{:?}", usage), origins);
                 }
             },
             _ => {}
@@ -339,10 +324,13 @@ impl P2PVideoNode {
     }
 
     pub fn configure_player(&self) -> PlayerNetworkConfig {
+        let mut delegates = vec![];
+        let mut bootstrap = vec![];
+
         PlayerNetworkConfig {
-            ipfs_gateway: "".to_string(),
-            ipfs_delegates: "".to_string(),
-            ipfs_bootstrap: "".to_string(),
+            ipfs_gateways: self.config.public_gateways.clone(),
+            ipfs_delegates: delegates,
+            ipfs_bootstrap: bootstrap,
         }
     }
 }

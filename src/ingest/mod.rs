@@ -16,6 +16,7 @@ use async_std::sync::Sender;
 use async_std::task;
 use mpeg2ts::time::ClockReference;
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
+use rand::seq::SliceRandom;
 use std::error::Error;
 use std::io::Cursor;
 use std::process::ExitStatus;
@@ -90,10 +91,13 @@ impl VideoIngest {
         let player = HLSPlayer::from_hls(&hls, &self.hls_dist, &self.player_net);
         let player_cid = player.directory.block.cid.clone();
 
-        log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
-            player_cid.to_string(),
-            self.player_net.ipfs_gateway,
-            player.directory.total_size());
+        let mut rng = rand::thread_rng();
+        if let Some(ipfs_gateway) = self.player_net.ipfs_gateways.choose(&mut rng) {
+            log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
+                player_cid.to_string(),
+                ipfs_gateway,
+                player.directory.total_size());
+        }
 
         hls.send(&self.block_sender).await;
         player.send(&self.block_sender).await;

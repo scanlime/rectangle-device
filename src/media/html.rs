@@ -2,6 +2,7 @@
 
 use crate::media::hls::{HLSContainer, HLS_FILENAME};
 use async_std::sync::Sender;
+use rand::seq::SliceRandom;
 use rectangle_device_blocks::{Cid, BlockInfo, BlockUsage, PbLink};
 use rectangle_device_blocks::raw::{RawBlockFile, MultiRawBlockFile};
 use rectangle_device_blocks::dir::DirectoryBlock;
@@ -13,9 +14,9 @@ pub const HTML_FILENAME : &'static str = "index.html";
 pub const HLS_DIRECTORY : &'static str = "video";
 
 pub struct PlayerNetworkConfig {
-    pub ipfs_gateway: String,
-    pub ipfs_delegates: String,
-    pub ipfs_bootstrap: String,
+    pub ipfs_gateways: Vec<String>,
+    pub ipfs_delegates: Vec<String>,
+    pub ipfs_bootstrap: Vec<String>,
 }
 
 pub struct HLSPlayer {
@@ -45,6 +46,7 @@ impl HLSPlayerDist {
 
 impl HLSPlayer {
     pub fn from_hls(hls: &HLSContainer, dist: &HLSPlayerDist, network: &PlayerNetworkConfig) -> HLSPlayer {
+        assert!(network.ipfs_gateways.len() >= 1);
         HLSPlayer::from_link(
             hls.directory.link(HLS_DIRECTORY.to_string()),
             &dist.script.root.cid,
@@ -56,10 +58,15 @@ impl HLSPlayer {
     pub fn from_link(hls_link: PbLink, script_cid: &Cid, added_links: &Vec<PbLink>,
         sequence: usize, network: &PlayerNetworkConfig) -> HLSPlayer {
 
+        let mut rng = rand::thread_rng();
+        let ipfs_gateway = network.ipfs_gateways.choose(&mut rng).unwrap();
+        let ipfs_delegates = network.ipfs_delegates.join(" ");
+        let ipfs_bootstrap = network.ipfs_bootstrap.join(" ");
+
         let html_string = IndexTemplate {
-            ipfs_gateway: &network.ipfs_gateway,
-            ipfs_delegates: &network.ipfs_delegates,
-            ipfs_bootstrap: &network.ipfs_bootstrap,
+            ipfs_gateway: &ipfs_gateway,
+            ipfs_delegates: &ipfs_delegates,
+            ipfs_bootstrap: &ipfs_bootstrap,
             hls_cid: &hls_link.cid.to_string(),
             main_js_cid: &script_cid.to_string(),
             hls_name: HLS_FILENAME,

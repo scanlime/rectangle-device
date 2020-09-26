@@ -33,8 +33,12 @@ impl Warmer {
             try_num: 0
         }) {
             Ok(()) => {},
-            Err(TrySendError::Full(item)) => log::error!("queue full, dropping {:?}", item),
-            Err(TrySendError::Disconnected(item)) => log::error!("queue disconnected, dropping {:?}", item),
+            Err(TrySendError::Full(item)) => {
+                log::error!("queue full, dropping {:?}", item);
+            },
+            Err(TrySendError::Disconnected(item)) => {
+                log::error!("queue disconnected, dropping {:?}", item);
+            },
         }
     }
 
