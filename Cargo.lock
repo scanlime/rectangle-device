@@ -2701,11 +2701,8 @@ dependencies = [
  "env_logger",
  "file_limit",
  "log",
- "rectangle-device-blocks",
  "rectangle-device-media",
  "rectangle-device-network",
- "rectangle-device-player",
- "rectangle-device-sandbox",
 ]
 
 [[package]]

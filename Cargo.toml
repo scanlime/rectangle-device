@@ -11,9 +11,6 @@ log = "0.4.11"
 clap = "2.33.3"
 async-std = { version = "1.6.0", features = ["unstable"] }
 
-rectangle-device-player = { version = "0.1.0", path = "player" }
-rectangle-device-sandbox = { version = "0.1.0", path = "sandbox" }
-rectangle-device-blocks = { version = "0.1.0", path = "blocks" }
 rectangle-device-network = { version = "0.1.0", path = "network" }
 rectangle-device-media = { version = "0.1.0", path = "media" }
 
