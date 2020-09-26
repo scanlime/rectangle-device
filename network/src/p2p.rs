@@ -65,7 +65,7 @@ impl PartialEq for BlockSendKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct P2PConfig {
     pub pinning_services: Vec<Url>,
     pub pinning_gateways: Vec<Url>,
@@ -76,13 +76,18 @@ pub struct P2PConfig {
 }
 
 pub struct P2PVideoNode {
+    config: P2PConfig,
     gossipsub_topic: gossipsub::Topic,
     warmer: Warmer,
     pinner: Pinner,
     swarm: Swarm<P2PVideoBehaviour>,
-    config: P2PConfig,
     media_receiver: Option<Receiver<MediaUpdate>>,
     hls_player_dist: HLSPlayerDist,
+}
+
+struct TrackedPeer {
+    use_as_delegate: bool,
+
 }
 
 #[derive(NetworkBehaviour)]
@@ -98,7 +103,9 @@ pub struct P2PVideoBehaviour {
     #[behaviour(ignore)]
     block_store: BTreeMap<Vec<u8>, BlockInfo>,
     #[behaviour(ignore)]
-    blocks_to_send: BTreeSet<BlockSendKey>
+    blocks_to_send: BTreeSet<BlockSendKey>,
+    #[behaviour(ignore)]
+    router_peer_addrs: BTreeMap<PeerId, BTreeSet<Multiaddr>>,
 }
 
 impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
@@ -107,11 +114,17 @@ impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
             IdentifyEvent::Sent{..} => {},
             IdentifyEvent::Error{..} => {},
             IdentifyEvent::Received{ peer_id, info, observed_addr } => {
+
+                // Let the DHT know where we might be reachable
                 log::trace!("identified peer {}, observing us as {}", peer_id, observed_addr);
                 for addr in info.listen_addrs {
                     log::trace!("identified peer {}, listening at {}", peer_id, addr);
                     self.kad_wan.add_address(&peer_id, addr);
                 }
+
+                // Listen to identify responses from our configured peers, storing
+                // additional addresses they claim to be reachable through
+
             }
         }
     }
@@ -199,7 +212,7 @@ impl P2PVideoNode {
         const KAD_LAN : &[u8] = b"/ipfs/lan/kad/1.0.0";
         const KAD_WAN : &[u8] = b"/ipfs/wan/kad/1.0.0";
 
-        let mut behaviour = P2PVideoBehaviour {
+        let behaviour = P2PVideoBehaviour {
             gossipsub: Gossipsub::new(
                 MessageAuthenticity::Signed(local_key.clone()),
                 GossipsubConfigBuilder::new().build()
@@ -222,41 +235,44 @@ impl P2PVideoNode {
             mdns: Mdns::new()?,
             block_store: BTreeMap::new(),
             blocks_to_send: BTreeSet::new(),
+            router_peer_addrs: BTreeMap::new(),
         };
-
-        for addr in config.router_peers.iter().chain(config.additional_peers.iter()) {
-            if let Some((peer_id, addr)) = split_p2p_addr(&addr) {
-                behaviour.kad_wan.add_address(&peer_id, addr);
-            }
-        }
-
-        for addr in config.router_peers.iter() {
-            if let Some((peer_id, addr)) = split_p2p_addr(&addr) {
-                let mut addr = addr;
-                addr.push(Protocol::P2p(peer_id.into()));
-                addr.push(Protocol::P2pCircuit);
-                behaviour.inject_new_listen_addr(&addr);
-                addr.push(Protocol::P2p(local_peer_id.clone().into()));
-                log::info!("listening via router {}", addr);
-            }
-        }
-
-        behaviour.kad_wan.bootstrap().unwrap();
-        behaviour.gossipsub.subscribe(gossipsub_topic.clone());
 
         let mut swarm = Swarm::new(transport, behaviour, local_peer_id.clone());
 
-        for addr in &config.listen_addrs {
-            Swarm::listen_on(&mut swarm, addr.clone())?;
+        // All configured peers get used to bootstrap our DHT
+        for addr in config.router_peers.iter().chain(config.additional_peers.iter()) {
+            if let Some((peer_id, addr)) = split_p2p_addr(&addr) {
+                swarm.kad_wan.add_address(&peer_id, addr);
+            }
+        }
+
+        // Router peers become part of a separate address book
+        for addr in config.router_peers {
+            if let Some((peer_id, addr)) = split_p2p_addr(&addr) {
+                let mut circuit = addr;
+                circuit.push(Protocol::P2p(peer_id.into()));
+                circuit.push(Protocol::P2pCircuit);
+                swarm.inject_new_listen_addr(&circuit);
+                circuit.push(Protocol::P2p(local_peer_id.clone().into()));
+                log::info!("listening via router {}", circuit);
+            }
+        }
+
+        swarm.kad_wan.bootstrap().unwrap();
+        swarm.gossipsub.subscribe(gossipsub_topic.clone());
+
+        for addr in config.listen_addrs {
+            Swarm::listen_on(&mut swarm, addr)?;
         }
 
         let mut node = P2PVideoNode {
             hls_player_dist: HLSPlayerDist::new(),
             media_receiver: Some(mub.receiver.clone()),
             gossipsub_topic,
+            config,
             warmer,
             pinner,
-            config,
             swarm,
         };
 
@@ -373,6 +389,7 @@ impl P2PVideoNode {
     }
 
     fn configure_player(&self) -> Option<PlayerNetworkConfig> {
+        // Choose a random https gateway, and keep only the hostname part
         let gateway = {
             let mut gateways = vec![];
             for url in &self.config.public_gateways {
