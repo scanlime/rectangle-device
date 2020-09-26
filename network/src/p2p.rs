@@ -5,7 +5,7 @@ use crate::pinner::Pinner;
 use crate::keypair::keypair_from_openssl_rsa;
 use rectangle_device_media::html::PlayerNetworkConfig;
 use rectangle_device_blocks::{BlockUsage, BlockInfo};
-use async_std::sync::Receiver;
+use async_std::sync::{Sender, Receiver, channel};
 use core::pin::Pin;
 use std::cmp::Ordering;
 use futures::{Future, Stream};
@@ -71,6 +71,9 @@ pub struct P2PConfig {
 }
 
 pub struct P2PVideoNode {
+    pub block_sender: Sender<BlockInfo>,
+    pub player_config_receiver: Receiver<PlayerNetworkConfig>,
+    player_config_sender: Sender<PlayerNetworkConfig>,
     gossipsub_topic: gossipsub::Topic,
     warmer: Warmer,
     pinner: Pinner,
@@ -181,6 +184,9 @@ fn kad_store_config() -> MemoryStoreConfig {
 impl P2PVideoNode {
     pub fn new(block_receiver: Receiver<BlockInfo>, config: P2PConfig) -> Result<P2PVideoNode, Box<dyn Error>> {
 
+        let (block_sender, block_receiver) = channel(20);
+        let (player_config_sender, player_config_receiver) = channel(20);
+
         let pinner = Pinner::new();
         let warmer = Warmer::new();
 
@@ -218,6 +224,8 @@ impl P2PVideoNode {
             block_store: BTreeMap::new(),
             blocks_to_send: BTreeSet::new(),
             block_receiver: Some(block_receiver),
+            player_config_sender,
+            player_config_receiver,
         };
 
         for addr in config.router_peers.iter().chain(config.additional_peers.iter()) {
@@ -251,7 +259,8 @@ impl P2PVideoNode {
             warmer,
             pinner,
             config,
-            swarm
+            swarm,
+            block_sender
         })
     }
 

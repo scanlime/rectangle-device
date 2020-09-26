@@ -28,10 +28,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     log::info!("{:?}", config);
 
-    let (block_sender, block_receiver) = channel(20);
-    let node = P2PVideoNode::new(block_receiver, config)?;
+    let node = P2PVideoNode::new(config)?;
 
     let video_args = string_values(&matches, "video_args");
+// fix me: let's have a separate layer that connects stuff like p2pvideonode and videoingest, but isn't itself about either.
+// probably just a channel for video blocks and/or playlists (so we don't have to send network addrs back to the ingest thread)
+
     VideoIngest::new(block_sender, node.configure_player()).run(video_args)?;
 
     node.run_blocking()?;
