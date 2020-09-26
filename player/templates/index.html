@@ -4,7 +4,7 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=100.0, minimum-scale=1.0" />
         <link rel="icon" href="data:," />
-        <script src="https://{{ main_js_cid }}.ipfs.{{ ipfs_gateway }}/"></script>
+        <script src="https://{{ main_js_cid }}.ipfs.{{ gateway }}/"></script>
         <style>
             body {
                 background: #000;
@@ -22,7 +22,7 @@
     <body>
         <video muted controls
             data-ipfs-src="{{ hls_cid }}/{{ hls_name }}"
-            data-ipfs-delegates="{{ ipfs_delegates }}"
-            data-ipfs-bootstrap="{{ ipfs_bootstrap }}" ></video>
+            data-ipfs-delegates="{{ delegates }}"
+            data-ipfs-bootstrap="{{ bootstrap }}" ></video>
     </body>
 </html>

@@ -8,7 +8,7 @@ args:
         long: log-level
         value_name: FILTER
         takes_value: true
-        default_value: rectangle_device::ingest=info
+        default_value: rectangle_device=info,rectangle_device::ingest=info
         help: default log filter, superceded by RUST_LOG environment variable
     - video_args:
         last: true
@@ -16,6 +16,14 @@ args:
         value_name: CMDLINE
         help: video import, filter, and transcode options for ffmpeg
         default_value: -i https://live.diode.zone/hls/eyesopod/index.m3u8 -c copy
+    - listen_addrs:
+        short: L
+        long: listen
+        value_name: MULTIADDR
+        multiple: true
+        takes_value: true
+        default_value: /ip4/0.0.0.0/tcp/4004
+        help: listen for incoming p2p connections
     - pinning_services:
         short: P
         long: pin
@@ -27,18 +35,18 @@ args:
     - pinning_gateways:
         short: G
         long: pin-gw
-        value_name: HOST[:PORT]
+        value_name: URL
         takes_value: true
-        default_value: 99.149.215.66:8080
+        default_value: http://99.149.215.66:8080
         multiple: true
         help: use a gateway near the pinning service to push all blocks as soon as they are created
     - public_gateways:
         short: g
         long: pub-gw
-        value_name: HOST[:PORT]
+        value_name: URL
         takes_value: true
         multiple: true
-        default_value: cf-ipfs.com
+        default_value: https://cf-ipfs.com
         help: specify a public gateway to use for serving the player html and code
     - router_peers:
         short: r
@@ -46,7 +54,7 @@ args:
         value_name: MULTIADDR
         takes_value: true
         multiple: true
-        default_value: /ip4/99.149.215.66/tcp/4001/QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5
+        default_value: /ip4/99.149.215.66/tcp/4001/p2p/QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5
         help: specify a 'router' ipfs peer, which should have websocket (wss://) support and p2p-circuit routing
     - additional_peers:
         short: p

@@ -14,7 +14,7 @@ use async_std::task::{self, Poll, Context};
 use libipld::multihash::Multihash;
 use libp2p_bitswap::{Bitswap, BitswapEvent};
 use libp2p::{PeerId, Swarm, NetworkBehaviour};
-use libp2p::core::multiaddr::{Multiaddr, Protocol};
+use libp2p::core::multiaddr::Protocol;
 use libp2p::gossipsub::{self, Gossipsub, GossipsubConfigBuilder, MessageAuthenticity, GossipsubEvent};
 use libp2p::gossipsub::error::PublishError;
 use libp2p::identify::{Identify, IdentifyEvent};
@@ -28,6 +28,9 @@ use std::thread;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
 use std::error::Error;
+
+pub use libp2p::core::multiaddr::Multiaddr;
+pub use url::Url;
 
 const GOSSIPSUB_TOPIC : &'static str = "rectangle-net";
 const NETWORK_IDENTITY : &'static str = "rectangle-device";
@@ -59,11 +62,12 @@ impl PartialEq for BlockSendKey {
 
 #[derive(Debug)]
 pub struct P2PConfig {
-    pub pinning_services: Vec<String>,
-    pub pinning_gateways: Vec<String>,
-    pub public_gateways: Vec<String>,
-    pub router_peers: Vec<String>,
-    pub additional_peers: Vec<String>,
+    pub pinning_services: Vec<Url>,
+    pub pinning_gateways: Vec<Url>,
+    pub public_gateways: Vec<Url>,
+    pub router_peers: Vec<Multiaddr>,
+    pub additional_peers: Vec<Multiaddr>,
+    pub listen_addrs: Vec<Multiaddr>,
 }
 
 pub struct P2PVideoNode {
@@ -295,7 +299,9 @@ impl P2PVideoNode {
 
         // Load this block into all gateways that we expect to pin this block eventually
         for gateway in &self.config.pinning_gateways {
-            self.warmer.send(format!("http://{}/ipfs/{}", gateway, cid_str));
+            if let Some(host) = gateway.host() {
+                self.warmer.send(gateway.join("ipfs/").unwrap().join(&cid_str).unwrap());
+            }
         }
 
         match usage {
@@ -303,7 +309,7 @@ impl P2PVideoNode {
             _ => {
                 for gateway in &self.config.public_gateways {
                     // Only send non-video (player, directory) blocks to public gateways
-                    self.warmer.send(format!("https://{}.ipfs.{}", cid_str, gateway));
+                    self.warmer.send(gateway.join("ipfs/").unwrap().join(&cid_str).unwrap());
                 }
             }
         }
@@ -325,13 +331,12 @@ impl P2PVideoNode {
     }
 
     pub fn configure_player(&self) -> PlayerNetworkConfig {
+        let mut gateways = vec![];
         let mut delegates = vec![];
         let mut bootstrap = vec![];
 
         PlayerNetworkConfig {
-            ipfs_gateways: self.config.public_gateways.clone(),
-            ipfs_delegates: delegates,
-            ipfs_bootstrap: bootstrap,
+            gateways, delegates, bootstrap
         }
     }
 }

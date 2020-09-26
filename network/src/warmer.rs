@@ -2,11 +2,11 @@
 
 use async_std::sync::{channel, Sender, Receiver, TrySendError};
 use std::time::Duration;
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, StatusCode, Url};
 
 #[derive(Debug)]
 struct QueueItem {
-    url: String,
+    url: Url,
     try_num: u64,
 }
 
@@ -27,7 +27,7 @@ impl Warmer {
         Warmer { sender, receiver }
     }
 
-    pub fn send(&self, url: String) {
+    pub fn send(&self, url: Url) {
         match self.sender.try_send(QueueItem {
             url,
             try_num: 0
@@ -64,7 +64,7 @@ impl Warmer {
             let item = self.receiver.recv().await.unwrap();
             log::trace!("[{}] head {} try {}", pool_id, item.url, item.try_num);
 
-            let result = client.head(&item.url).send().await;
+            let result = client.head(item.url.clone()).send().await;
             match result.map(|r| r.status()) {
                 Ok(StatusCode::OK) => {
                     log::info!("[{}] try# {}, {}", pool_id, item.try_num, item.url);

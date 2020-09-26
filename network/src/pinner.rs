@@ -4,7 +4,7 @@ use async_std::sync::{channel, Sender, Receiver, TrySendError};
 use std::error::Error;
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
-use reqwest::Client;
+use reqwest::{Client, Url};
 
 const POOL_SIZE: usize = 4;
 const QUEUE_SIZE: usize = 100;
@@ -12,7 +12,7 @@ const TIMEOUT_MSEC: u64 = 10000;
 
 #[derive(Debug)]
 struct QueueItem {
-    api: String,
+    api: Url,
     id: Option<String>,
     pin: APIPin,
 }
@@ -46,7 +46,7 @@ impl Pinner {
         Pinner { sender, receiver }
     }
 
-    pub fn send(&self, api: String, cid: String, name: String, origins: Vec<String>) {
+    pub fn send(&self, api: Url, cid: String, name: String, origins: Vec<String>) {
         match self.sender.try_send(QueueItem {
             api,
             // To do: reuse old pins, use pin completion to GC blocks from ram
@@ -89,15 +89,17 @@ impl Pinner {
             let item = self.receiver.recv().await.unwrap();
             log::trace!("[{}] {:?}", pool_id, item);
 
+            let pins = item.api.join("pins").unwrap();
             let url = match &item.id {
-                None => format!("{}/pins", item.api),
-                Some(id) => format!("{}/pins/{}", item.api, id)
+                None => pins,
+                Some(id) => pins.join(&id.to_string()).unwrap(),
             };
 
             let result = async {
-                let result = client.post(&url).json(&item.pin).send().await?;
+                log::info!("requesting {} {:?}", url, item.pin);
+                let result = client.post(url).json(&item.pin).send().await?;
                 let status: APIPinStatus = result.json().await?;
-                log::info!("pinning api at {} says {:?}", url, status);
+                log::info!("pinning api says {:?}", status);
                 Result::<String, Box<dyn Error>>::Ok(status.id)
             }.await;
 

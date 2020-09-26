@@ -92,10 +92,10 @@ impl VideoIngest {
         let player_cid = player.directory.block.cid.clone();
 
         let mut rng = rand::thread_rng();
-        if let Some(ipfs_gateway) = self.player_net.ipfs_gateways.choose(&mut rng) {
+        if let Some(gateway) = self.player_net.gateways.choose(&mut rng) {
             log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
                 player_cid.to_string(),
-                ipfs_gateway,
+                gateway,
                 player.directory.total_size());
         }
 
