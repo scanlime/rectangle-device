@@ -16,7 +16,7 @@ args:
         multiple: true
         required: true
         value_name: FFMPEG-ARGS
-        help: video input, filter, and transcode options for ffmpeg. should include "-i" and probably "-c" options.
+        help: video input, filter, and transcode options for ffmpeg
     - listen_addrs:
         short: L
         long: listen
@@ -46,7 +46,7 @@ args:
         takes_value: true
         multiple: true
         default_value: https://cf-ipfs.com
-        help: specify a public gateway to use for serving the player html and code
+        help: specify a public gateway to use for serving the player html and code. must support https and subdomains.
     - router_peers:
         short: r
         long: router
