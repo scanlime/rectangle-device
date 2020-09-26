@@ -1,0 +1,57 @@
+name: rectangle-device
+version: "0.1.0"
+author: scanlime
+about: experimental video server
+args:
+    - log_level:
+        short: l
+        long: log-level
+        value_name: FILTER
+        takes_value: true
+        default_value: rectangle_device::ingest=info
+        help: default log filter, superceded by RUST_LOG environment variable
+    - video_args:
+        last: true
+        required: true
+        value_name: CMDLINE
+        help: video import, filter, and transcode options for ffmpeg
+        default_value: -i https://live.diode.zone/hls/eyesopod/index.m3u8 -c copy
+    - pinning_services:
+        short: P
+        long: pin
+        value_name: URL
+        multiple: true
+        takes_value: true
+        default_value: http://99.149.215.66:5000/api/v1
+        help: use a pinning service API for long-term storage
+    - pinning_gateways:
+        short: G
+        long: pin-gw
+        value_name: HOST[:PORT]
+        takes_value: true
+        default_value: 99.149.215.66:8080
+        multiple: true
+        help: use a gateway near the pinning service to push all blocks as soon as they are created
+    - public_gateways:
+        short: g
+        long: pub-gw
+        value_name: HOST[:PORT]
+        takes_value: true
+        multiple: true
+        default_value: cf-ipfs.com
+        help: specify a public gateway to use for serving the player html and code
+    - router_peers:
+        short: r
+        long: router
+        value_name: MULTIADDR
+        takes_value: true
+        multiple: true
+        default_value: /ip4/99.149.215.66/tcp/4001/QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5
+        help: specify a 'router' ipfs peer, which should have websocket (wss://) support and p2p-circuit routing
+    - additional_peers:
+        short: p
+        long: peer
+        value_name: MULTIADDR
+        takes_value: true
+        multiple: true
+        help: specify an additional peer with no special properties

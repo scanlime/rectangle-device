@@ -1,28 +1,37 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
+#[macro_use]
+extern crate clap;
+
 use rectangle_device_network::p2p::{P2PVideoNode, P2PConfig};
 use rectangle_device_media::ingest::VideoIngest;
 use async_std::sync::channel;
 use env_logger::{Env, from_env};
+use clap::{App, ArgMatches};
 use std::error::Error;
 
+fn arg_values<S: AsRef<str>>(matches: &ArgMatches, name: S) -> Vec<String> {
+    match matches.values_of(name) {
+        Some(strs) => strs.map(|s| s.to_string()).collect(),
+        None => Vec::new(),
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    from_env(Env::default().default_filter_or("rectangle_device::ingest=info")).init();
-    file_limit::set_to_max()?;
-
-    let video_args : Vec<String> = std::env::args().skip(1).collect();
-    let video_args = if video_args.len() > 0 {video_args} else {vec![
-        "-i".to_string(), "https://live.diode.zone/hls/eyesopod/index.m3u8".to_string(),
-        "-c".to_string(), "copy".to_string()
-    ]};
-
+    let yaml = load_yaml!("cli.yml");
+    let matches = App::from_yaml(yaml).get_matches();
+    let log_level = matches.value_of("log_level").unwrap();
+    let video_args = arg_values(&matches, "video_args");
     let config = P2PConfig {
-        pinning_services: vec!["http://99.149.215.66:5000/api/v1".to_string()],
-        pinning_gateways: vec!["99.149.215.66:8080".to_string()],
-        public_gateways: vec!["cf-ipfs.com".to_string(), "ipfs.io".to_string()],
-        router_peers: vec!["/ip4/99.149.215.66/tcp/4001/QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5".to_string()],
-        additional_peers: vec![],
+        pinning_services: arg_values(&matches, "pinning_services"),
+        pinning_gateways: arg_values(&matches, "pinning_gateways"),
+        public_gateways: arg_values(&matches, "public_gateways"),
+        router_peers: arg_values(&matches, "router_peers"),
+        additional_peers: arg_values(&matches, "additional_peers"),
     };
+
+    from_env(Env::default().default_filter_or(log_level)).init();
+    file_limit::set_to_max()?;
 
     let (block_sender, block_receiver) = channel(16);
     let node = P2PVideoNode::new(block_receiver, config)?;

@@ -8,7 +8,7 @@ edition = "2018"
 env_logger = "0.7.1"
 file_limit = "0.0.2"
 log = "0.4.11"
-clap = "2.33.3"
+clap = { version = "2.33.3", features = ["yaml"] }
 async-std = { version = "1.6.0", features = ["unstable"] }
 
 rectangle-device-network = { version = "0.1.0", path = "network" }
