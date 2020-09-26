@@ -1,22 +1,22 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use crate::config;
-use crate::warmer::Warmer;
-use crate::pinner::Pinner;
+use crate::network::warmer::Warmer;
+use crate::network::pinner::Pinner;
+use crate::network::keypair::keypair_from_openssl_rsa;
+use crate::media::html::PlayerNetworkConfig;
 use rectangle_device_blocks::{BlockUsage, BlockInfo};
 use async_std::sync::Receiver;
 use core::pin::Pin;
 use std::cmp::Ordering;
 use futures::{Future, Stream};
 use libipld::cid::Cid;
-use async_std::task::{Poll, Context};
+use async_std::task::{self, Poll, Context};
 use libipld::multihash::Multihash;
 use libp2p_bitswap::{Bitswap, BitswapEvent};
 use libp2p::{PeerId, Swarm, NetworkBehaviour};
 use libp2p::core::multiaddr::{Multiaddr, Protocol};
 use libp2p::gossipsub::{self, Gossipsub, GossipsubConfigBuilder, MessageAuthenticity, GossipsubEvent};
 use libp2p::gossipsub::error::PublishError;
-use libp2p::identity::Keypair;
 use libp2p::identify::{Identify, IdentifyEvent};
 use libp2p::kad::{self, Kademlia, KademliaEvent, KademliaConfig};
 use libp2p::kad::record::store::{MemoryStore, MemoryStoreConfig};
@@ -24,10 +24,10 @@ use libp2p::mdns::{Mdns, MdnsEvent};
 use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess, NetworkBehaviour};
 use std::borrow::Cow;
+use std::thread;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
 use std::error::Error;
-use std::process::{Command, Stdio};
 
 const GOSSIPSUB_TOPIC : &'static str = "rectangle-net";
 const NETWORK_IDENTITY : &'static str = "rectangle-device";
@@ -58,7 +58,7 @@ impl PartialEq for BlockSendKey {
 }
 
 pub struct P2PConfig {
-    pub pinning_services: Vec<String>
+    pub pinning_services: Vec<String>,
     pub pinning_gateways: Vec<String>,
     pub public_gateways: Vec<String>,
     pub router_peers: Vec<String>,
@@ -186,31 +186,13 @@ fn kad_store_config() -> MemoryStoreConfig {
     config
 }
 
-
 impl P2PVideoNode {
     pub fn new(block_receiver: Receiver<BlockInfo>, config: P2PConfig) -> Result<P2PVideoNode, Box<dyn Error>> {
-
-        let (pin_sender, pin_r
-            eceiver) = channel(128);
 
         let pinner = Pinner::new();
         let warmer = Warmer::new();
 
-        let player_net = node.configure_player();
-
-        let ingest = ingest::VideoIngest::new(block_sender, pin_sender, player_net);
-        let pinner = pinner::Pinner { pinning_api, pin_receiver, local_multiaddrs };
-
-        thread::Builder::new().name("warmer".to_string()).spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(warmer.task());
-        })?;
-
-        thread::Builder::new().name("pinner".to_string()).spawn(move || {
-            tokio::runtime::Runtime::new().unwrap().block_on(pinner.task());
-        })?;}
-
-
-        let local_key = keypair::keypair_from_openssl_rsa()?;
+        let local_key = keypair_from_openssl_rsa()?;
         let local_peer_id = PeerId::from(local_key.public());
         log::info!("local identity is {}", local_peer_id.to_string());
 
@@ -247,8 +229,9 @@ impl P2PVideoNode {
             block_receiver: Some(block_receiver),
         };
 
-        behaviour.add_router_address(&config::IPFS_ROUTER_ID.parse().unwrap(), config::IPFS_ROUTER_ADDR_TCP.parse().unwrap());
-        behaviour.add_router_address(&config::IPFS_ROUTER_ID.parse().unwrap(), config::IPFS_ROUTER_ADDR_UDP.parse().unwrap());
+        // to do
+        //behaviour.add_router_address(&config::IPFS_ROUTER_ID.parse().unwrap(), config::IPFS_ROUTER_ADDR_TCP.parse().unwrap());
+        //behaviour.add_router_address(&config::IPFS_ROUTER_ID.parse().unwrap(), config::IPFS_ROUTER_ADDR_UDP.parse().unwrap());
         behaviour.kad_wan.bootstrap().unwrap();
         behaviour.gossipsub.subscribe(gossipsub_topic.clone());
 
@@ -258,8 +241,27 @@ impl P2PVideoNode {
         Ok(P2PVideoNode {
             gossipsub_topic,
             warmer,
+            pinner,
+            config,
             swarm
         })
+    }
+
+    pub fn run_blocking(self) -> Result<(), Box<dyn Error>> {
+        let warmer = self.warmer.clone();
+        let pinner = self.pinner.clone();
+
+        let warmer_thread = thread::Builder::new().name("net-warmer".to_string())
+            .spawn(move || tokio::runtime::Runtime::new().unwrap().block_on(warmer.task()))?;
+
+        let pinner_thread = thread::Builder::new().name("net-pinner".to_string())
+            .spawn(move || tokio::runtime::Runtime::new().unwrap().block_on(pinner.task()))?;
+
+        task::Builder::new().name("net-node".to_string()).blocking(self);
+
+        warmer_thread.join().unwrap();
+        pinner_thread.join().unwrap();
+        Ok(())
     }
 
     fn store_block(&mut self, block_info: BlockInfo) {
@@ -283,24 +285,22 @@ impl P2PVideoNode {
 
         self.swarm.block_store.insert(hash_bytes, block_info);
 
-        self.warmup_block(cid, usage);
-        self.pin_block(cid, usage);
+        self.warmup_block(&cid, &usage);
+        self.pin_block(&cid, &usage);
     }
 
-    self.pin_sender.send(player_cid).await;
-
-    fn warmup_block(&self, cid: &Cid, usage: BlockUsage) {
+    fn warmup_block(&self, cid: &Cid, usage: &BlockUsage) {
         let cid_str = cid.to_string();
 
         // Load this block into all gateways that we expect to pin this block eventually
-        for gateway in &self.pinning_gateways {
+        for gateway in &self.config.pinning_gateways {
             self.warmer.send(format!("http://{}/ipfs/{}", gateway, cid_str));
         }
 
         match usage {
             BlockUsage::VideoSegment(_) => (),
             _ => {
-                for gateway in &self.public_gateways {
+                for gateway in &self.config.public_gateways {
                     // Only send non-video (player, directory) blocks to public gateways
                     self.warmer.send(format!("https://{}.ipfs.{}", cid_str, gateway));
                 }
@@ -308,11 +308,31 @@ impl P2PVideoNode {
         }
     }
 
-    fn pin_block(&self, cid: &Cid, usage: BlockUsage) {
+    fn pin_block(&self, cid: &Cid, usage: &BlockUsage) {
         match usage {
             BlockUsage::PlayerDirectory(_) => {
                 // Only pin the top-most object; player directories link to everything else
-                self.pin_sender.send(cid.clone()).await;
+
+                let origins = vec![
+/*
+                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                        router_addr = IPFS_ROUTER_ADDR_TCP,
+                        router_id = IPFS_ROUTER_ID,
+                        local_id = local_peer_id),
+                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                        router_addr = IPFS_ROUTER_ADDR_UDP,
+                        router_id = IPFS_ROUTER_ID,
+                        local_id = local_peer_id),
+                    format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
+                        router_addr = IPFS_ROUTER_ADDR_WSS,
+                        router_id = IPFS_ROUTER_ID,
+                        local_id = local_peer_id)
+*/
+                ];
+
+                for api in &self.config.pinning_services {
+                    self.pinner.send(api.clone(), cid.to_string(), format!("{:?}", usage), origins.clone());
+                }
             },
             _ => {}
         }
@@ -325,26 +345,6 @@ impl P2PVideoNode {
             ipfs_bootstrap: "".to_string(),
         }
     }
-
-    pub fn local_multiaddrs(&self) -> Vec<String> {
-        let local_peer_id = Swarm::local_peer_id(&node.swarm).clone();
-        let local_multiaddrs = local_multiaddrs(&local_peer_id);
-        vec![
-            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                router_addr = IPFS_ROUTER_ADDR_TCP,
-                router_id = IPFS_ROUTER_ID,
-                local_id = local_peer_id),
-            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                router_addr = IPFS_ROUTER_ADDR_UDP,
-                router_id = IPFS_ROUTER_ID,
-                local_id = local_peer_id),
-            format!("{router_addr:}/p2p/{router_id:}/p2p-circuit/p2p/{local_id:}",
-                router_addr = IPFS_ROUTER_ADDR_WSS,
-                router_id = IPFS_ROUTER_ID,
-                local_id = local_peer_id)
-        ]
-    }
-
 }
 
 impl Future for P2PVideoNode {

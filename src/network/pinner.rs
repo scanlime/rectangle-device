@@ -1,17 +1,19 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use async_std::sync::Receiver;
+use async_std::sync::{channel, Sender, Receiver, TrySendError};
 use std::error::Error;
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
-use libipld::cid::Cid;
+use reqwest::Client;
 
-const POOL_SIZE: usize = 2;
+const POOL_SIZE: usize = 4;
 const QUEUE_SIZE: usize = 100;
+const TIMEOUT_MSEC: u64 = 10000;
 
 #[derive(Debug)]
 struct QueueItem {
-    // https://ipfs.github.io/pinning-services-api-spec/
     api: String,
+    id: Option<String>,
     pin: APIPin,
 }
 
@@ -21,6 +23,7 @@ pub struct Pinner {
     receiver: Receiver<QueueItem>,
 }
 
+// https://ipfs.github.io/pinning-services-api-spec/
 #[derive(Deserialize, Serialize, Debug)]
 struct APIPin {
     cid: String,
@@ -38,19 +41,29 @@ struct APIPinStatus {
 }
 
 impl Pinner {
-    pub fn new(pinning_api: String, local_multiaddrs: Vec<String>) -> self {
-        let (sender, receiver) = channel(128);
+    pub fn new() -> Self {
+        let (sender, receiver) = channel(QUEUE_SIZE);
         Pinner { sender, receiver }
     }
 
     pub fn send(&self, api: String, cid: String, name: String, origins: Vec<String>) {
         match self.sender.try_send(QueueItem {
-            url,
-            try_num: 0
+            api,
+            // To do: reuse old pins, use pin completion to GC blocks from ram
+            id: None,
+            pin: APIPin {
+                cid,
+                name,
+                origins
+            }
         }) {
             Ok(()) => {},
-            Err(TrySendError::Full(item)) => log::error!("queue full, dropping {:?}", item),
-            Err(TrySendError::Disconnected(item)) => log::error!("queue disconnected, dropping {:?}", item),
+            Err(TrySendError::Full(item)) => {
+                log::error!("queue full, dropping {:?}", item);
+            },
+            Err(TrySendError::Disconnected(item)) => {
+                log::error!("queue disconnected, dropping {:?}", item);
+            },
         }
     }
 
@@ -74,34 +87,22 @@ impl Pinner {
 
         loop {
             let item = self.receiver.recv().await.unwrap();
-            log::trace!("[{}] head {} try {}", pool_id, item.url, item.try_num);
+            log::trace!("[{}] {:?}", pool_id, item);
 
-
-    pub async fn task(self) {
-        let client = reqwest::Client::new();
-        let mut id = None;
-
-        loop {
-            let cid = self.pin_receiver.recv().await.unwrap();
-            let pin = APIPin {
-                cid: cid.to_string(),
-                name: "temporary name for pinning request".to_string(),
-                origins: self.local_multiaddrs.clone()
-            };
-
-            let url = match &id {
-                None => format!("{}/pins", self.pinning_api),
-                Some(id) => format!("{}/pins/{}", self.pinning_api, id)
+            let url = match &item.id {
+                None => format!("{}/pins", item.api),
+                Some(id) => format!("{}/pins/{}", item.api, id)
             };
 
             let result = async {
-                let result = client.post(&url).json(&pin).send().await?;
+                let result = client.post(&url).json(&item.pin).send().await?;
                 let status: APIPinStatus = result.json().await?;
                 log::info!("pinning api at {} says {:?}", url, status);
                 Result::<String, Box<dyn Error>>::Ok(status.id)
             }.await;
 
-            id = match result {
+            // to do: track pinning progress
+            let _id = match result {
                 Err(err) => {
                     log::warn!("pinning api error, {}", err);
                     None

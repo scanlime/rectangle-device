@@ -1,6 +1,6 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use rectangle_device_blocks::{Cid, BlockUsage, BlockInfo, BLOCK_MAX_BYTES};
+use rectangle_device_blocks::{BlockUsage, BlockInfo, BLOCK_MAX_BYTES};
 use rectangle_device_blocks::raw::RawBlockFile;
 use rectangle_device_blocks::package::Package;
 use rectangle_device_sandbox::{ffmpeg, socket::SocketPool};
@@ -20,6 +20,8 @@ use std::error::Error;
 use std::io::Cursor;
 use std::process::ExitStatus;
 use std::time::{Duration, Instant};
+use std::thread;
+use std::thread::JoinHandle;
 use thiserror::Error;
 
 pub const PUBLISH_INTERVAL_SEC : u64 = 30;
@@ -55,7 +57,6 @@ impl VideoIngest {
         VideoIngest {
             mc,
             block_sender,
-            pin_sender,
             hls_dist,
             player_net,
             next_publish_at,
@@ -67,16 +68,21 @@ impl VideoIngest {
         }
     }
 
-    pub fn run(self, args: Vec<String>) -> Result<MediaContainer, Box<dyn Error>> {
+    pub fn run(self, args: Vec<String>) -> Result<JoinHandle<MediaContainer>, Box<dyn Error>>  {
+        let thread = thread::Builder::new().name("ingest".to_string());
+        Ok(thread.spawn(move || self.thread_main(args))?)
+    }
+
+    fn thread_main(self, args: Vec<String>) -> MediaContainer {
         let tc = ffmpeg::TranscodeConfig {
             image: ffmpeg::default_image(),
             args,
             allow_networking: true,
             segment_time: SEGMENT_MIN_SEC,
         };
-        let mc = task::block_on(self.task(tc))?;
+        let mc = task::block_on(self.task(tc)).unwrap();
         log::trace!("finished successfully");
-        Ok(mc)
+        mc
     }
 
     async fn send_player(&self) {
