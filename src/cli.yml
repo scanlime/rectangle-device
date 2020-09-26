@@ -10,6 +10,13 @@ args:
         takes_value: true
         default_value: rectangle_device=info,rectangle_device_media::ingest=debug
         help: default log filter, superceded by RUST_LOG environment variable
+    - publish_interval:
+        short: i
+        long: interval
+        value_name: DURATION
+        takes_value: true
+        default_value: 30s
+        help: how often to re-publish video playlists while streaming
     - video_args:
         index: 1
         last: true

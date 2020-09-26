@@ -23,8 +23,6 @@ use std::thread;
 use std::thread::JoinHandle;
 use thiserror::Error;
 
-pub const PUBLISH_INTERVAL_SEC : u64 = 30;
-
 pub struct VideoIngest {
     media_sender: Sender<MediaUpdate>,
     mc: MediaContainer,
@@ -44,8 +42,7 @@ pub enum VideoIngestError {
 }
 
 impl VideoIngest {
-    pub fn new(mub: &MediaUpdateBus) -> VideoIngest {
-        let publish_interval = Duration::from_secs(PUBLISH_INTERVAL_SEC);
+    pub fn new(mub: &MediaUpdateBus, publish_interval: Duration) -> VideoIngest {
         let next_publish_at = Instant::now() + publish_interval;
         VideoIngest {
             next_publish_at,

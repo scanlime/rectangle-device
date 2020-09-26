@@ -28,10 +28,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     log::info!("{:?}", config);
 
+    let video_args = string_values(&matches, "video_args");
+    let publish_interval = matches.value_of("publish_interval").unwrap();
+    let publish_interval = publish_interval.parse::<humantime::Duration>()
+        .expect("expected a valid `humantime`-compatible duration argument");
+
     let mub = MediaUpdateBus::new();
     let node = P2PVideoNode::new(&mub, config)?;
-
-    VideoIngest::new(&mub).run(string_values(&matches, "video_args"))?;
+    let ingest = VideoIngest::new(&mub, publish_interval.into());
+    ingest.run(video_args)?;
 
     node.run_blocking()?;
     panic!("network loop quit unexpectedly");
