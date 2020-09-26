@@ -299,10 +299,11 @@ impl P2PVideoNode {
             let player = HLSPlayer::from_hls(&hls, player_dist, &player_net);
             let player_cid = &player.directory.block.cid;
 
-            log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
+            log::info!("PLAYER created ######## https://{}.ipfs.{} ######## ({} bytes) {:?}",
                 player_cid.to_string(),
                 player_net.gateway,
-                player.directory.total_size());
+                player.directory.total_size(),
+                player_net);
 
             for block_info in hls.into_blocks().into_iter().chain(player.into_blocks()) {
                 self.store_block(block_info);

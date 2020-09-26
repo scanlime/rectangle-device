@@ -11,6 +11,7 @@ pub const JS_FILENAME : &'static str = "main.js";
 pub const HTML_FILENAME : &'static str = "index.html";
 pub const HLS_DIRECTORY : &'static str = "video";
 
+#[derive(Debug)]
 pub struct PlayerNetworkConfig {
     pub gateway: String,
     pub delegates: Vec<String>,
