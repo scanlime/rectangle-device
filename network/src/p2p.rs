@@ -1,9 +1,9 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use crate::network::warmer::Warmer;
-use crate::network::pinner::Pinner;
-use crate::network::keypair::keypair_from_openssl_rsa;
-use crate::media::html::PlayerNetworkConfig;
+use crate::warmer::Warmer;
+use crate::pinner::Pinner;
+use crate::keypair::keypair_from_openssl_rsa;
+use rectangle_device_media::html::PlayerNetworkConfig;
 use rectangle_device_blocks::{BlockUsage, BlockInfo};
 use async_std::sync::Receiver;
 use core::pin::Pin;

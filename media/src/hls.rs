@@ -1,6 +1,6 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use crate::media::MediaContainer;
+use crate::MediaContainer;
 use rectangle_device_blocks::{BlockInfo, BlockUsage, PbLink};
 use rectangle_device_blocks::raw::RawBlockFile;
 use rectangle_device_blocks::dir::DirectoryBlock;

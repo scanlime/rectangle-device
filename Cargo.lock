@@ -2700,21 +2700,12 @@ dependencies = [
  "clap",
  "env_logger",
  "file_limit",
- "futures",
- "libipld",
- "libp2p",
- "libp2p-bitswap",
  "log",
- "m3u8-rs",
- "mpeg2ts",
- "rand 0.7.3",
  "rectangle-device-blocks",
+ "rectangle-device-media",
+ "rectangle-device-network",
  "rectangle-device-player",
  "rectangle-device-sandbox",
- "reqwest",
- "serde",
- "thiserror",
- "tokio",
 ]
 
 [[package]]
@@ -2728,6 +2719,38 @@ dependencies = [
  "log",
  "prost",
  "prost-build",
+]
+
+[[package]]
+name = "rectangle-device-media"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "log",
+ "m3u8-rs",
+ "mpeg2ts",
+ "rand 0.7.3",
+ "rectangle-device-blocks",
+ "rectangle-device-player",
+ "rectangle-device-sandbox",
+ "thiserror",
+]
+
+[[package]]
+name = "rectangle-device-network"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "futures",
+ "libipld",
+ "libp2p",
+ "libp2p-bitswap",
+ "log",
+ "rectangle-device-blocks",
+ "rectangle-device-media",
+ "reqwest",
+ "serde",
+ "tokio",
 ]
 
 [[package]]

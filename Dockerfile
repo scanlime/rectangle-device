@@ -110,7 +110,7 @@ COPY --chown=builder docker/skeleton/ ./
 COPY --chown=builder Cargo.lock ./
 RUN cargo build --release 2>&1
 
-# Compile workspace members separately, also for faster docker rebuilds
+# Compile player workspace separately, also for faster docker rebuilds
 
 COPY --chown=builder player player
 COPY --chown=builder docker/skeleton/Cargo.toml ./
@@ -118,20 +118,6 @@ RUN \
 echo '[workspace]' >> Cargo.toml && \
 echo 'members = [ "player" ]' >> Cargo.toml && \
 cd player && cargo build --release -vv 2>&1
-
-COPY --chown=builder blocks blocks
-COPY --chown=builder docker/skeleton/Cargo.toml ./
-RUN \
-echo '[workspace]' >> Cargo.toml && \
-echo 'members = [ "blocks" ]' >> Cargo.toml && \
-cd blocks && cargo build --release 2>&1
-
-COPY --chown=builder sandbox sandbox
-COPY --chown=builder docker/skeleton/Cargo.toml ./
-RUN \
-echo '[workspace]' >> Cargo.toml && \
-echo 'members = [ "sandbox" ]' >> Cargo.toml && \
-cd sandbox && cargo build --release 2>&1
 
 # Replace the skeleton with the real app and build it
 

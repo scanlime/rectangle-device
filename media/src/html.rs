@@ -1,6 +1,6 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use crate::media::hls::{HLSContainer, HLS_FILENAME};
+use crate::hls::{HLSContainer, HLS_FILENAME};
 use async_std::sync::Sender;
 use rand::seq::SliceRandom;
 use rectangle_device_blocks::{Cid, BlockInfo, BlockUsage, PbLink};

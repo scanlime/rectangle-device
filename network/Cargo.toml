@@ -1,0 +1,19 @@
+[package]
+name = "rectangle-device-network"
+version = "0.1.0"
+authors = ["Micah Elizabeth Scott <micah@scanlime.org>"]
+edition = "2018"
+
+[dependencies]
+log = "0.4.11"
+async-std = { version = "1.6.0", features = ["unstable"] }
+libp2p = "0.28.1"
+libp2p-bitswap = "0.7.0"
+futures = "0.3.1"
+libipld = "0.4.0"
+serde = "1.0.116"
+reqwest = { version = "0.10.8", features = ["json"] }
+tokio = "0.2.22"
+
+rectangle-device-blocks = { version = "0.1.0", path = "../blocks" }
+rectangle-device-media = { version = "0.1.0", path = "../media" }

@@ -2,8 +2,9 @@
 
 pub mod hls;
 pub mod html;
+pub mod ingest;
 
-use libipld::cid::Cid;
+use rectangle_device_blocks::Cid;
 
 pub struct MediaBlockInfo {
     pub cid: Cid,

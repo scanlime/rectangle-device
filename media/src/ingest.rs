@@ -5,9 +5,9 @@ use rectangle_device_blocks::raw::RawBlockFile;
 use rectangle_device_blocks::package::Package;
 use rectangle_device_sandbox::{ffmpeg, socket::SocketPool};
 
-use crate::media::{MediaBlockInfo, MediaContainer};
-use crate::media::hls::{HLSContainer, SEGMENT_MIN_SEC, SEGMENT_MAX_SEC};
-use crate::media::html::{PlayerNetworkConfig, HLSPlayer, HLSPlayerDist};
+use crate::{MediaBlockInfo, MediaContainer};
+use crate::hls::{HLSContainer, SEGMENT_MIN_SEC, SEGMENT_MAX_SEC};
+use crate::html::{PlayerNetworkConfig, HLSPlayer, HLSPlayerDist};
 
 use async_std::io::ReadExt;
 use async_std::os::unix::net::UnixStream;

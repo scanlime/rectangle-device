@@ -1,7 +1,7 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use rectangle_device::network::p2p::{P2PVideoNode, P2PConfig};
-use rectangle_device::ingest::VideoIngest;
+use rectangle_device_network::p2p::{P2PVideoNode, P2PConfig};
+use rectangle_device_media::ingest::VideoIngest;
 use async_std::sync::channel;
 use env_logger::{Env, from_env};
 use std::error::Error;
