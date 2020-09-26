@@ -28,3 +28,12 @@ pub struct BlockInfo {
     pub block: Block,
     pub usage: BlockUsage,
 }
+
+impl BlockUsage {
+    pub fn attach_to(&self, block: Block) -> BlockInfo {
+        BlockInfo {
+            block: block,
+            usage: self.clone(),
+        }
+    }
+}

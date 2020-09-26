@@ -1,16 +1,13 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use async_trait::async_trait;
-use crate::core::{BlockInfo, BlockUsage, Cid, PbLink};
+use crate::core::{Block, Cid, PbLink};
 
-pub use async_std::sync::Sender;
-
-#[async_trait]
 pub trait Package {
-    async fn send(self, sender: &Sender<BlockInfo>, usage: &BlockUsage);
+    type BlockIterator: Iterator<Item=Block>;
 
     fn cid(&self) -> &Cid;
     fn total_size(&self) -> u64;
+    fn into_blocks(self) -> Self::BlockIterator;
 
     fn link(&self, name: String) -> PbLink {
         PbLink {

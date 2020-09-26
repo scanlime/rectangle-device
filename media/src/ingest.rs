@@ -5,9 +5,8 @@ use rectangle_device_blocks::raw::RawBlockFile;
 use rectangle_device_blocks::package::Package;
 use rectangle_device_sandbox::{ffmpeg, socket::SocketPool};
 
-use crate::{MediaBlockInfo, MediaContainer};
-use crate::hls::{HLSContainer, SEGMENT_MIN_SEC, SEGMENT_MAX_SEC};
-use crate::html::{PlayerNetworkConfig, HLSPlayer, HLSPlayerDist};
+use crate::{MediaBlockInfo, MediaContainer, MediaUpdate, MediaUpdateBus};
+use crate::hls::{SEGMENT_MIN_SEC, SEGMENT_MAX_SEC};
 
 use async_std::io::ReadExt;
 use async_std::os::unix::net::UnixStream;
@@ -16,7 +15,6 @@ use async_std::sync::Sender;
 use async_std::task;
 use mpeg2ts::time::ClockReference;
 use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
-use rand::seq::SliceRandom;
 use std::error::Error;
 use std::io::Cursor;
 use std::process::ExitStatus;
@@ -28,12 +26,8 @@ use thiserror::Error;
 pub const PUBLISH_INTERVAL_SEC : u64 = 30;
 
 pub struct VideoIngest {
-    block_sender: Sender<BlockInfo>,
-    player_net: PlayerNetworkConfig,
-
-    hls_dist: HLSPlayerDist,
+    media_sender: Sender<MediaUpdate>,
     mc: MediaContainer,
-
     publish_interval: Duration,
     next_publish_at: Instant,
 
@@ -50,18 +44,14 @@ pub enum VideoIngestError {
 }
 
 impl VideoIngest {
-    pub fn new(block_sender: Sender<BlockInfo>, player_net: PlayerNetworkConfig) -> VideoIngest {
-        let hls_dist = HLSPlayerDist::new();
+    pub fn new(mub: &MediaUpdateBus) -> VideoIngest {
         let publish_interval = Duration::from_secs(PUBLISH_INTERVAL_SEC);
         let next_publish_at = Instant::now() + publish_interval;
-        let mc = MediaContainer { blocks: vec![] };
         VideoIngest {
-            mc,
-            block_sender,
-            hls_dist,
-            player_net,
             next_publish_at,
             publish_interval,
+            mc: MediaContainer::new(),
+            media_sender: mub.sender.clone(),
             clock_latest: None,
             clock_first: None,
             segment_clock: None,
@@ -86,23 +76,6 @@ impl VideoIngest {
         mc
     }
 
-    async fn send_player(&self) {
-        let hls = HLSContainer::new(&self.mc);
-        let player = HLSPlayer::from_hls(&hls, &self.hls_dist, &self.player_net);
-        let player_cid = player.directory.block.cid.clone();
-
-        let mut rng = rand::thread_rng();
-        if let Some(gateway) = self.player_net.gateways.choose(&mut rng) {
-            log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
-                player_cid.to_string(),
-                gateway,
-                player.directory.total_size());
-        }
-
-        hls.send(&self.block_sender).await;
-        player.send(&self.block_sender).await;
-    }
-
     async fn push_video_block(&mut self, data: &[u8], duration: f32) {
         log::info!("block is {} bytes, {} seconds", data.len(), duration);
 
@@ -120,15 +93,24 @@ impl VideoIngest {
         let usage = BlockUsage::VideoSegment(sequence);
         self.mc.blocks.push(info);
 
-        log::trace!("sending {} {:?}", file.block.cid.to_string(), usage);
-        file.send(&self.block_sender, &usage).await;
+        for block in file.into_blocks() {
+            log::trace!("sending {} {:?}", block.cid.to_string(), usage);
+            self.media_sender.send(MediaUpdate::Block(BlockInfo {
+                usage: usage.clone(),
+                block
+            })).await;
+        }
     }
 
-    async fn send_player_periodically(&mut self) {
+    async fn send_container(&self) {
+        self.media_sender.send(MediaUpdate::Container(self.mc.clone())).await;
+    }
+
+    async fn send_container_periodically(&mut self) {
         let now = Instant::now();
         if now > self.next_publish_at {
             self.next_publish_at = now + self.publish_interval;
-            self.send_player().await;
+            self.send_container().await;
         }
     }
 
@@ -162,9 +144,6 @@ impl VideoIngest {
 
     async fn task(mut self, tc: ffmpeg::TranscodeConfig) -> Result<MediaContainer, Box<dyn Error>> {
         log::info!("ingest process starting, {:?}", tc);
-
-        // This is a good time to make sure the receiver has our player dependencies too
-        self.hls_dist.send_copy(&self.block_sender).await;
 
         // Use one socket for the segment output; ffmpeg will re-open it for each segment
         let mut pool = SocketPool::new()?;
@@ -232,15 +211,15 @@ impl VideoIngest {
                 write_cursor.into_inner(),
                 self.latest_segment_duration()).await;
 
-            self.send_player_periodically().await;
+            self.send_container_periodically().await;
         }
 
         let status = status_notifier.await?;
         log::trace!("{:?}", status);
 
         if status.success() {
-            log::warn!("ingest stream ended successfully, final player");
-            self.send_player().await;
+            log::warn!("ingest stream ended successfully, final container");
+            self.send_container().await;
             Ok(self.mc)
         } else {
             Err(Box::new(VideoIngestError::ProcessFailed(status)))

@@ -1,9 +1,7 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use crate::hls::{HLSContainer, HLS_FILENAME};
-use async_std::sync::Sender;
-use rand::seq::SliceRandom;
-use rectangle_device_blocks::{Cid, BlockInfo, BlockUsage, PbLink};
+use rectangle_device_blocks::{Cid, BlockUsage, BlockInfo, PbLink};
 use rectangle_device_blocks::raw::{RawBlockFile, MultiRawBlockFile};
 use rectangle_device_blocks::dir::DirectoryBlock;
 use rectangle_device_blocks::package::Package;
@@ -14,7 +12,7 @@ pub const HTML_FILENAME : &'static str = "index.html";
 pub const HLS_DIRECTORY : &'static str = "video";
 
 pub struct PlayerNetworkConfig {
-    pub gateways: Vec<String>,
+    pub gateway: String,
     pub delegates: Vec<String>,
     pub bootstrap: Vec<String>,
 }
@@ -39,14 +37,14 @@ impl HLSPlayerDist {
         HLSPlayerDist { script, links }
     }
 
-    pub async fn send_copy(&self, sender: &Sender<BlockInfo>) {
-        self.script.clone().send(sender, &BlockUsage::PlayerScript).await;
+    pub fn copy_blocks(&self) -> impl IntoIterator<Item = BlockInfo> {
+        let usage = BlockUsage::PlayerScript;
+        self.script.clone().into_blocks().map(move |block| usage.attach_to(block))
     }
 }
 
 impl HLSPlayer {
     pub fn from_hls(hls: &HLSContainer, dist: &HLSPlayerDist, network: &PlayerNetworkConfig) -> HLSPlayer {
-        assert!(network.gateways.len() >= 1);
         HLSPlayer::from_link(
             hls.directory.link(HLS_DIRECTORY.to_string()),
             &dist.script.root.cid,
@@ -58,15 +56,10 @@ impl HLSPlayer {
     pub fn from_link(hls_link: PbLink, script_cid: &Cid, added_links: &Vec<PbLink>,
         sequence: usize, network: &PlayerNetworkConfig) -> HLSPlayer {
 
-        let mut rng = rand::thread_rng();
-        let gateway = network.gateways.choose(&mut rng).unwrap();
-        let delegates = network.delegates.join(" ");
-        let bootstrap = network.bootstrap.join(" ");
-
         let html_string = IndexTemplate {
-            gateway: &gateway,
-            delegates: &delegates,
-            bootstrap: &bootstrap,
+            gateway: &network.gateway,
+            delegates: &network.delegates.join(" "),
+            bootstrap: &network.bootstrap.join(" "),
             hls_cid: &hls_link.cid.to_string(),
             main_js_cid: &script_cid.to_string(),
             hls_name: HLS_FILENAME,
@@ -93,8 +86,14 @@ impl HLSPlayer {
         }
     }
 
-    pub async fn send(self, sender: &Sender<BlockInfo>) {
-        self.html.send(sender, &BlockUsage::Player(self.sequence)).await;
-        self.directory.send(sender, &BlockUsage::PlayerDirectory(self.sequence)).await;
+    pub fn into_blocks(self) -> impl IntoIterator<Item = BlockInfo> {
+        let player_usage = BlockUsage::Player(self.sequence);
+        let directory_usage = BlockUsage::PlayerDirectory(self.sequence);
+
+        self.html.into_blocks().map(
+            move |block| player_usage.attach_to(block)
+        ).chain(self.directory.into_blocks().map(
+            move |block| directory_usage.attach_to(block)
+        ))
     }
 }

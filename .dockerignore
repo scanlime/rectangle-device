@@ -1,4 +1,7 @@
 target/
 node_modules/
 dist/
-
+*.sh
+*.md
+*.log
+*.txt

@@ -3,9 +3,12 @@
 use crate::warmer::Warmer;
 use crate::pinner::Pinner;
 use crate::keypair::keypair_from_openssl_rsa;
-use rectangle_device_media::html::PlayerNetworkConfig;
+use rectangle_device_media::{MediaContainer, MediaUpdate, MediaUpdateBus};
+use rectangle_device_media::hls::HLSContainer;
+use rectangle_device_media::html::{HLSPlayer, HLSPlayerDist, PlayerNetworkConfig};
 use rectangle_device_blocks::{BlockUsage, BlockInfo};
-use async_std::sync::{Sender, Receiver, channel};
+use rectangle_device_blocks::package::Package;
+use async_std::sync::Receiver;
 use core::pin::Pin;
 use std::cmp::Ordering;
 use futures::{Future, Stream};
@@ -23,6 +26,8 @@ use libp2p::kad::record::store::{MemoryStore, MemoryStoreConfig};
 use libp2p::mdns::{Mdns, MdnsEvent};
 use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p::swarm::{SwarmEvent, NetworkBehaviourEventProcess, NetworkBehaviour};
+use rand::thread_rng;
+use rand::seq::SliceRandom;
 use std::borrow::Cow;
 use std::thread;
 use std::collections::{BTreeMap, BTreeSet};
@@ -71,14 +76,13 @@ pub struct P2PConfig {
 }
 
 pub struct P2PVideoNode {
-    pub block_sender: Sender<BlockInfo>,
-    pub player_config_receiver: Receiver<PlayerNetworkConfig>,
-    player_config_sender: Sender<PlayerNetworkConfig>,
     gossipsub_topic: gossipsub::Topic,
     warmer: Warmer,
     pinner: Pinner,
     swarm: Swarm<P2PVideoBehaviour>,
     config: P2PConfig,
+    media_receiver: Option<Receiver<MediaUpdate>>,
+    hls_player_dist: HLSPlayerDist,
 }
 
 #[derive(NetworkBehaviour)]
@@ -91,8 +95,6 @@ pub struct P2PVideoBehaviour {
     bitswap: Bitswap<Multihash>,
     mdns: Mdns,
 
-    #[behaviour(ignore)]
-    block_receiver: Option<Receiver<BlockInfo>>,
     #[behaviour(ignore)]
     block_store: BTreeMap<Vec<u8>, BlockInfo>,
     #[behaviour(ignore)]
@@ -182,10 +184,7 @@ fn kad_store_config() -> MemoryStoreConfig {
 }
 
 impl P2PVideoNode {
-    pub fn new(block_receiver: Receiver<BlockInfo>, config: P2PConfig) -> Result<P2PVideoNode, Box<dyn Error>> {
-
-        let (block_sender, block_receiver) = channel(20);
-        let (player_config_sender, player_config_receiver) = channel(20);
+    pub fn new(mub: &MediaUpdateBus, config: P2PConfig) -> Result<P2PVideoNode, Box<dyn Error>> {
 
         let pinner = Pinner::new();
         let warmer = Warmer::new();
@@ -223,9 +222,6 @@ impl P2PVideoNode {
             mdns: Mdns::new()?,
             block_store: BTreeMap::new(),
             blocks_to_send: BTreeSet::new(),
-            block_receiver: Some(block_receiver),
-            player_config_sender,
-            player_config_receiver,
         };
 
         for addr in config.router_peers.iter().chain(config.additional_peers.iter()) {
@@ -254,14 +250,22 @@ impl P2PVideoNode {
             Swarm::listen_on(&mut swarm, addr.clone())?;
         }
 
-        Ok(P2PVideoNode {
+        let mut node = P2PVideoNode {
+            hls_player_dist: HLSPlayerDist::new(),
+            media_receiver: Some(mub.receiver.clone()),
             gossipsub_topic,
             warmer,
             pinner,
             config,
             swarm,
-            block_sender
-        })
+        };
+
+        // Store the player distribution blocks
+        for block_info in node.hls_player_dist.copy_blocks() {
+            node.store_block(block_info);
+        }
+
+        Ok(node)
     }
 
     pub fn run_blocking(self) -> Result<(), Box<dyn Error>> {
@@ -279,6 +283,31 @@ impl P2PVideoNode {
         warmer_thread.join().unwrap();
         pinner_thread.join().unwrap();
         Ok(())
+    }
+
+    fn media_update_received(&mut self, update: MediaUpdate) {
+        match update {
+            MediaUpdate::Block(block_info) => self.store_block(block_info),
+            MediaUpdate::Container(mc) => self.publish_media_container(mc),
+        }
+    }
+
+    fn publish_media_container(&mut self, mc: MediaContainer) {
+        if let Some(player_net) = self.configure_player() {
+            let player_dist = &self.hls_player_dist;
+            let hls = HLSContainer::new(&mc);
+            let player = HLSPlayer::from_hls(&hls, player_dist, &player_net);
+            let player_cid = &player.directory.block.cid;
+
+            log::info!("PLAYER created ====> https://{}.ipfs.{} ({} bytes)",
+                player_cid.to_string(),
+                player_net.gateway,
+                player.directory.total_size());
+
+            for block_info in hls.into_blocks().into_iter().chain(player.into_blocks()) {
+                self.store_block(block_info);
+            }
+        }
     }
 
     fn store_block(&mut self, block_info: BlockInfo) {
@@ -340,18 +369,25 @@ impl P2PVideoNode {
         }
     }
 
-    pub fn configure_player(&self) -> PlayerNetworkConfig {
-        let mut delegates = vec![];
-        let mut bootstrap = vec![];
-        let mut gateways = vec![];
-
-        for url in &self.config.public_gateways {
-            if url.scheme() == "https" && url.port_or_known_default() == Some(443) {
-                if let Some(s) = url.host_str() {
-                    gateways.push(s.to_string());
+    fn configure_player(&self) -> Option<PlayerNetworkConfig> {
+        let gateway = {
+            let mut gateways = vec![];
+            for url in &self.config.public_gateways {
+                if url.scheme() == "https" && url.port_or_known_default() == Some(443) {
+                    if let Some(s) = url.host_str() {
+                        gateways.push(s.to_string());
+                    }
                 }
             }
-        }
+            let mut rng = thread_rng();
+            match gateways.choose_mut(&mut rng) {
+                Some(g) => Some(std::mem::take(g)),
+                None => None
+            }
+        };
+
+        let mut delegates = vec![];
+        let mut bootstrap = vec![];
 
         for addr in &self.config.router_peers {
             if player_addr_filter(addr) {
@@ -366,8 +402,19 @@ impl P2PVideoNode {
             }
         }
 
-        PlayerNetworkConfig {
-            gateways, delegates, bootstrap,
+        if delegates.is_empty() {
+            log::error!("can't configure the player without a viable delegate node");
+            None
+        } else {
+            match gateway {
+                None => {
+                    log::error!("can't configure the player without at least one public gateway");
+                    None
+                },
+                Some(gateway) => Some(PlayerNetworkConfig {
+                    gateway, delegates, bootstrap,
+                })
+            }
         }
     }
 }
@@ -432,26 +479,26 @@ impl Future for P2PVideoNode {
             }
         }
 
-        // Fully drain the block_receiver, store_block() should be fast
+        // Fully drain the media receiver
         loop {
-            match self.swarm.block_receiver.take() {
+            match self.media_receiver.take() {
                 None => {
                     break;
                 },
-                Some(mut block_receiver) => {
-                    let block_event = Pin::new(&mut block_receiver).poll_next(ctx);
-                    match block_event {
+                Some(mut receiver) => {
+                    let event = Pin::new(&mut receiver).poll_next(ctx);
+                    match event {
                         Poll::Pending => {
-                            self.swarm.block_receiver = Some(block_receiver);
+                            self.media_receiver = Some(receiver);
                             break;
                         },
                         Poll::Ready(None) => {
-                            drop(block_receiver);
+                            drop(receiver);
                             break;
                         },
-                        Poll::Ready(Some(block_info)) => {
-                            self.swarm.block_receiver = Some(block_receiver);
-                            self.store_block(block_info);
+                        Poll::Ready(Some(update)) => {
+                            self.media_receiver = Some(receiver);
+                            self.media_update_received(update);
                         }
                     }
                 }

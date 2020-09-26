@@ -1,12 +1,13 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use async_trait::async_trait;
 use libipld::Ipld;
 use libipld::raw::RawCodec;
 use libipld::pb::{DagPbCodec, PbLink, PbNode};
 use prost::Message;
-use crate::core::{Block, Cid, BlockInfo, BlockUsage, DefaultHashType, BLOCK_MAX_BYTES};
-use crate::package::{Package, Sender};
+use std::iter::{once, Once, Chain, Map, Flatten};
+use std::vec;
+use crate::core::{Block, Cid, DefaultHashType, BLOCK_MAX_BYTES};
+use crate::package::Package;
 use crate::unixfs;
 
 #[derive(Clone)]
@@ -21,8 +22,9 @@ impl RawBlockFile {
     }
 }
 
-#[async_trait]
 impl Package for RawBlockFile {
+    type BlockIterator = Once<Block>;
+
     fn cid(&self) -> &Cid {
         &self.block.cid
     }
@@ -31,11 +33,8 @@ impl Package for RawBlockFile {
         self.block.data.len() as u64
     }
 
-    async fn send(self, sender: &Sender<BlockInfo>, usage: &BlockUsage) {
-        sender.send(BlockInfo {
-            block: self.block,
-            usage: usage.clone()
-        }).await;
+    fn into_blocks(self) -> Self::BlockIterator {
+        once(self.block)
     }
 }
 
@@ -82,8 +81,11 @@ impl MultiRawBlockFile {
     }
 }
 
-#[async_trait]
+type RawIntoBlocksFn = fn(RawBlockFile) -> <RawBlockFile as Package>::BlockIterator;
+
 impl Package for MultiRawBlockFile {
+    type BlockIterator = Chain<Once<Block>, Flatten<Map< vec::IntoIter<RawBlockFile>, RawIntoBlocksFn >>>;
+
     fn cid(&self) -> &Cid {
         &self.root.cid
     }
@@ -94,13 +96,7 @@ impl Package for MultiRawBlockFile {
         parts_size + root_size
     }
 
-    async fn send(self, sender: &Sender<BlockInfo>, usage: &BlockUsage) {
-        sender.send(BlockInfo {
-            block: self.root,
-            usage: usage.clone()
-        }).await;
-        for part in self.parts {
-            part.send(sender, usage).await;
-        }
+    fn into_blocks(self) -> Self::BlockIterator {
+        once(self.root).chain(self.parts.into_iter().map(RawBlockFile::into_blocks as RawIntoBlocksFn).flatten())
     }
 }

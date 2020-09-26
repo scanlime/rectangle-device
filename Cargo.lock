@@ -2711,7 +2711,6 @@ name = "rectangle-device-blocks"
 version = "0.1.0"
 dependencies = [
  "async-std",
- "async-trait",
  "leb128",
  "libipld",
  "log",
@@ -2744,6 +2743,7 @@ dependencies = [
  "libp2p",
  "libp2p-bitswap",
  "log",
+ "rand 0.7.3",
  "rectangle-device-blocks",
  "rectangle-device-media",
  "reqwest",

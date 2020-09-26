@@ -6,7 +6,6 @@ use rectangle_device_blocks::raw::RawBlockFile;
 use rectangle_device_blocks::dir::DirectoryBlock;
 use rectangle_device_blocks::package::Package;
 use m3u8_rs::playlist::{MediaPlaylist, MediaSegment, MediaPlaylistType};
-use async_std::sync::Sender;
 
 pub const HLS_FILENAME : &'static str = "index.m3u8";
 pub const SEGMENT_MIN_SEC : f32 = 2.0;
@@ -69,8 +68,14 @@ impl HLSContainer {
         }
     }
 
-    pub async fn send(self, sender: &Sender<BlockInfo>) {
-        self.playlist.send(sender, &BlockUsage::Playlist(self.sequence)).await;
-        self.directory.send(sender, &BlockUsage::VideoDirectory(self.sequence)).await;
+    pub fn into_blocks(self) -> impl IntoIterator<Item = BlockInfo> {
+        let playlist_usage = BlockUsage::Playlist(self.sequence);
+        let directory_usage = BlockUsage::VideoDirectory(self.sequence);
+
+        self.playlist.into_blocks().map(
+            move |block| playlist_usage.attach_to(block)
+        ).chain(self.directory.into_blocks().map(
+            move |block| directory_usage.attach_to(block)
+        ))
     }
 }

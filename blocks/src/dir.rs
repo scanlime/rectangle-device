@@ -1,12 +1,12 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
-use async_trait::async_trait;
 use libipld::Ipld;
 use libipld::pb::{DagPbCodec, PbNode};
 use prost::Message;
+use std::iter::{once, Once};
 use std::convert::TryFrom;
-use crate::core::{Block, Cid, BlockInfo, BlockUsage, DefaultHashType, BLOCK_MAX_BYTES};
-use crate::package::{Package, Sender};
+use crate::core::{Block, Cid, DefaultHashType, BLOCK_MAX_BYTES};
+use crate::package::Package;
 use crate::unixfs;
 
 pub use libipld::pb::PbLink;
@@ -44,8 +44,9 @@ impl DirectoryBlock {
     }
 }
 
-#[async_trait]
 impl Package for DirectoryBlock {
+    type BlockIterator = Once<Block>;
+
     fn cid(&self) -> &Cid {
         &self.block.cid
     }
@@ -56,10 +57,7 @@ impl Package for DirectoryBlock {
         linked_size + dir_block_size
     }
 
-    async fn send(self, sender: &Sender<BlockInfo>, usage: &BlockUsage) {
-        sender.send(BlockInfo {
-            block: self.block,
-            usage: usage.clone()
-        }).await;
+    fn into_blocks(self) -> Self::BlockIterator {
+        once(self.block)
     }
 }

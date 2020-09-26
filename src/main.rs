@@ -5,7 +5,7 @@ extern crate clap;
 
 use rectangle_device_network::p2p::{P2PVideoNode, P2PConfig, Multiaddr, Url};
 use rectangle_device_media::ingest::VideoIngest;
-use async_std::sync::channel;
+use rectangle_device_media::MediaUpdateBus;
 use env_logger::{Env, from_env};
 use clap::{App, ArgMatches};
 use std::error::Error;
@@ -28,13 +28,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     log::info!("{:?}", config);
 
-    let node = P2PVideoNode::new(config)?;
+    let mub = MediaUpdateBus::new();
+    let node = P2PVideoNode::new(&mub, config)?;
 
-    let video_args = string_values(&matches, "video_args");
-// fix me: let's have a separate layer that connects stuff like p2pvideonode and videoingest, but isn't itself about either.
-// probably just a channel for video blocks and/or playlists (so we don't have to send network addrs back to the ingest thread)
-
-    VideoIngest::new(block_sender, node.configure_player()).run(video_args)?;
+    VideoIngest::new(&mub).run(string_values(&matches, "video_args"))?;
 
     node.run_blocking()?;
     panic!("network loop quit unexpectedly");
