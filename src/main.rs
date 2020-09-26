@@ -10,6 +10,34 @@ use env_logger::{Env, from_env};
 use clap::{App, ArgMatches};
 use std::error::Error;
 
+fn main() -> Result<(), Box<dyn Error>> {
+    let yaml = load_yaml!("cli.yml");
+    let matches = App::from_yaml(yaml).get_matches();
+
+    let log_level = matches.value_of("log_level").unwrap();
+    from_env(Env::default().default_filter_or(log_level)).init();
+    file_limit::set_to_max()?;
+
+    let config = P2PConfig {
+        pinning_services: url_values(&matches, "pinning_services"),
+        pinning_gateways: url_values(&matches, "pinning_gateways"),
+        public_gateways: url_values(&matches, "public_gateways"),
+        router_peers: multiaddr_values(&matches, "router_peers"),
+        additional_peers: multiaddr_values(&matches, "additional_peers"),
+        listen_addrs: multiaddr_values(&matches, "listen_addrs"),
+    };
+    log::info!("{:?}", config);
+
+    let (block_sender, block_receiver) = channel(20);
+    let node = P2PVideoNode::new(block_receiver, config)?;
+
+    let video_args = string_values(&matches, "video_args");
+    VideoIngest::new(block_sender, node.configure_player()).run(video_args)?;
+
+    node.run_blocking()?;
+    panic!("network loop quit unexpectedly");
+}
+
 fn url_values<S: AsRef<str>>(matches: &ArgMatches, name: S) -> Vec<Url> {
     match matches.values_of(name) {
         Some(strs) => strs.map(|s| Url::parse(s).unwrap()).collect(),
@@ -29,33 +57,4 @@ fn multiaddr_values<S: AsRef<str>>(matches: &ArgMatches, name: S) -> Vec<Multiad
         Some(strs) => strs.map(|s| s.parse().unwrap()).collect(),
         None => Vec::new(),
     }
-}
-
-fn main() -> Result<(), Box<dyn Error>> {
-    let yaml = load_yaml!("cli.yml");
-    let matches = App::from_yaml(yaml).get_matches();
-
-    let log_level = matches.value_of("log_level").unwrap();
-    from_env(Env::default().default_filter_or(log_level)).init();
-    file_limit::set_to_max()?;
-
-    let config = P2PConfig {
-        pinning_services: url_values(&matches, "pinning_services"),
-        pinning_gateways: url_values(&matches, "pinning_gateways"),
-        public_gateways: url_values(&matches, "public_gateways"),
-        router_peers: multiaddr_values(&matches, "router_peers"),
-        additional_peers: multiaddr_values(&matches, "additional_peers"),
-        listen_addrs: multiaddr_values(&matches, "listen_addrs"),
-    };
-    log::info!("{:?}", config);
-
-    let (block_sender, block_receiver) = channel(16);
-    let node = P2PVideoNode::new(block_receiver, config)?;
-
-    let video_args = string_values(&matches, "video_args");
-    VideoIngest::new(block_sender, node.configure_player()).run(video_args)?;
-    node.run_blocking()?;
-
-    log::warn!("exiting normally?");
-    Ok(())
 }

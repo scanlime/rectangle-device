@@ -8,14 +8,15 @@ args:
         long: log-level
         value_name: FILTER
         takes_value: true
-        default_value: rectangle_device=info,rectangle_device::ingest=info
+        default_value: rectangle_device=info
         help: default log filter, superceded by RUST_LOG environment variable
     - video_args:
+        index: 1
         last: true
+        multiple: true
         required: true
-        value_name: CMDLINE
-        help: video import, filter, and transcode options for ffmpeg
-        default_value: -i https://live.diode.zone/hls/eyesopod/index.m3u8 -c copy
+        value_name: FFMPEG-ARGS
+        help: video input, filter, and transcode options for ffmpeg. should include "-i" and probably "-c" options.
     - listen_addrs:
         short: L
         long: listen
@@ -30,14 +31,12 @@ args:
         value_name: URL
         multiple: true
         takes_value: true
-        default_value: http://99.149.215.66:5000/api/v1
         help: use a pinning service API for long-term storage
     - pinning_gateways:
         short: G
         long: pin-gw
         value_name: URL
         takes_value: true
-        default_value: http://99.149.215.66:8080
         multiple: true
         help: use a gateway near the pinning service to push all blocks as soon as they are created
     - public_gateways:
@@ -54,7 +53,6 @@ args:
         value_name: MULTIADDR
         takes_value: true
         multiple: true
-        default_value: /ip4/99.149.215.66/tcp/4001/p2p/QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5
         help: specify a 'router' ipfs peer, which should have websocket (wss://) support and p2p-circuit routing
     - additional_peers:
         short: p

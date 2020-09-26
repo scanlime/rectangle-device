@@ -89,24 +89,11 @@ pub struct P2PVideoBehaviour {
     mdns: Mdns,
 
     #[behaviour(ignore)]
-    peer_id: PeerId,
-    #[behaviour(ignore)]
     block_receiver: Option<Receiver<BlockInfo>>,
     #[behaviour(ignore)]
     block_store: BTreeMap<Vec<u8>, BlockInfo>,
     #[behaviour(ignore)]
     blocks_to_send: BTreeSet<BlockSendKey>
-}
-
-impl P2PVideoBehaviour {
-    pub fn add_router_address(&mut self, peer: &PeerId, address: Multiaddr) {
-        self.kad_wan.add_address(peer, address.clone());
-        let mut circuit = address.clone();
-        circuit.push(Protocol::P2p(peer.clone().into()));
-        circuit.push(Protocol::P2pCircuit);
-        self.inject_new_listen_addr(&circuit);
-        log::info!("listening via router {}/p2p/{}", circuit, self.peer_id);
-    }
 }
 
 impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
@@ -228,20 +215,36 @@ impl P2PVideoNode {
                 MemoryStore::with_config(local_peer_id.clone(), kad_store_config()),
                 kad_config.set_protocol_name(Cow::Borrowed(KAD_WAN)).clone()),
             mdns: Mdns::new()?,
-            peer_id: local_peer_id.clone(),
             block_store: BTreeMap::new(),
             blocks_to_send: BTreeSet::new(),
             block_receiver: Some(block_receiver),
         };
 
-        // to do
-        //behaviour.add_router_address(&config::IPFS_ROUTER_ID.parse().unwrap(), config::IPFS_ROUTER_ADDR_TCP.parse().unwrap());
-        //behaviour.add_router_address(&config::IPFS_ROUTER_ID.parse().unwrap(), config::IPFS_ROUTER_ADDR_UDP.parse().unwrap());
+        for addr in config.router_peers.iter().chain(config.additional_peers.iter()) {
+            if let Some((peer_id, addr)) = split_p2p_addr(&addr) {
+                behaviour.kad_wan.add_address(&peer_id, addr);
+            }
+        }
+
+        for addr in config.router_peers.iter() {
+            if let Some((peer_id, addr)) = split_p2p_addr(&addr) {
+                let mut addr = addr;
+                addr.push(Protocol::P2p(peer_id.into()));
+                addr.push(Protocol::P2pCircuit);
+                behaviour.inject_new_listen_addr(&addr);
+                addr.push(Protocol::P2p(local_peer_id.clone().into()));
+                log::info!("listening via router {}", addr);
+            }
+        }
+
         behaviour.kad_wan.bootstrap().unwrap();
         behaviour.gossipsub.subscribe(gossipsub_topic.clone());
 
         let mut swarm = Swarm::new(transport, behaviour, local_peer_id.clone());
-        Swarm::listen_on(&mut swarm, "/ip4/0.0.0.0/tcp/4004".parse()?)?;
+
+        for addr in &config.listen_addrs {
+            Swarm::listen_on(&mut swarm, addr.clone())?;
+        }
 
         Ok(P2PVideoNode {
             gossipsub_topic,
@@ -299,9 +302,7 @@ impl P2PVideoNode {
 
         // Load this block into all gateways that we expect to pin this block eventually
         for gateway in &self.config.pinning_gateways {
-            if let Some(host) = gateway.host() {
-                self.warmer.send(gateway.join("ipfs/").unwrap().join(&cid_str).unwrap());
-            }
+            self.warmer.send(gateway.join("ipfs/").unwrap().join(&cid_str).unwrap());
         }
 
         match usage {
@@ -331,13 +332,73 @@ impl P2PVideoNode {
     }
 
     pub fn configure_player(&self) -> PlayerNetworkConfig {
-        let mut gateways = vec![];
         let mut delegates = vec![];
         let mut bootstrap = vec![];
+        let mut gateways = vec![];
+
+        for url in &self.config.public_gateways {
+            if url.scheme() == "https" && url.port_or_known_default() == Some(443) {
+                if let Some(s) = url.host_str() {
+                    gateways.push(s.to_string());
+                }
+            }
+        }
+
+        for addr in &self.config.router_peers {
+            if player_addr_filter(addr) {
+                delegates.push(addr.to_string());
+                bootstrap.push(addr.to_string());
+            }
+        }
+
+        for addr in &self.config.additional_peers {
+            if player_addr_filter(addr) {
+                bootstrap.push(addr.to_string());
+            }
+        }
 
         PlayerNetworkConfig {
-            gateways, delegates, bootstrap
+            gateways, delegates, bootstrap,
         }
+    }
+}
+
+fn player_addr_filter(addr: &Multiaddr) -> bool {
+    // Only give the player addresses that include a Wss protocol before the first p2p hop
+    let mut result = false;
+    for protocol in addr {
+        use Protocol::*;
+        match protocol {
+            Http | Memory(_) | Unix(_) | Ws(_) => {
+                // explicitly no.
+                result = false;
+                break;
+            },
+            P2p(_) | P2pCircuit | P2pWebRtcDirect | P2pWebRtcStar | P2pWebSocketStar => {
+                // stop here
+                break;
+            },
+            Wss(_) => {
+                result = true;
+            },
+            _ => {}
+        }
+    }
+    result
+}
+
+fn split_p2p_addr(addr: &Multiaddr) -> Option<(PeerId, Multiaddr)> {
+    let mut addr_copy = addr.clone();
+    if let Some(Protocol::P2p(hash)) = addr_copy.pop() {
+        if let Ok(peer_id) = PeerId::from_multihash(hash) {
+            Some((peer_id, addr_copy))
+        } else {
+            log::error!("address {} ignored because it has an invalid peer id hash", addr);
+            None
+        }
+    } else {
+        log::error!("address {} ignored because it does not end with a peer id hash", addr);
+        None
     }
 }
 

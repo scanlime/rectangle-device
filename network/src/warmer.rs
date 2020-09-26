@@ -17,9 +17,9 @@ pub struct Warmer {
 }
 
 const POOL_SIZE: usize = 10;
-const QUEUE_SIZE: usize = 100000;
-const TIMEOUT_MSEC: u64 = 200;
-const NUM_RETRIES: u64 = 1000;
+const QUEUE_SIZE: usize = 10000;
+const TIMEOUT_MSEC: u64 = 1000;
+const NUM_RETRIES: u64 = 10;
 
 impl Warmer {
     pub fn new() -> Warmer {
