@@ -8,7 +8,7 @@ args:
         long: log-level
         value_name: FILTER
         takes_value: true
-        default_value: rectangle_device=info
+        default_value: rectangle_device=info,rectangle_device_media::ingest=debug
         help: default log filter, superceded by RUST_LOG environment variable
     - video_args:
         index: 1

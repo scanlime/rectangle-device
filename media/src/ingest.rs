@@ -77,7 +77,7 @@ impl VideoIngest {
     }
 
     async fn push_video_block(&mut self, data: &[u8], duration: f32) {
-        log::info!("block is {} bytes, {} seconds", data.len(), duration);
+        log::debug!("block is {} bytes, {} seconds", data.len(), duration);
 
         // This is where the hash computation happens
         let file = RawBlockFile::new(data);
@@ -176,7 +176,7 @@ impl VideoIngest {
             if read_buffer.is_empty() {
                 break;
             }
-            log::info!("segment is {} bytes", read_buffer.len());
+            log::debug!("segment is {} bytes", read_buffer.len());
 
             let mut ts_reader = TsPacketReader::new(Cursor::new(&mut read_buffer));
             let mut write_cursor = Cursor::new(&mut write_buffer);

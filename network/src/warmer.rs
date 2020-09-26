@@ -67,7 +67,7 @@ impl Warmer {
             let result = client.head(item.url.clone()).send().await;
             match result.map(|r| r.status()) {
                 Ok(StatusCode::OK) => {
-                    log::info!("[{}] try# {}, {}", pool_id, item.try_num, item.url);
+                    log::debug!("[{}] try# {}, {}", pool_id, item.try_num, item.url);
                 },
                 err => {
                     let next_try = QueueItem {

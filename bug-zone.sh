@@ -3,6 +3,7 @@ cargo run \
 	-- \
 	-G http://99.149.215.66:8080 \
 	-g https://dweb.link \
+	-g https://cf-ipfs.com \
 	-r /dns4/ipfs.diode.zone/tcp/443/wss/p2p/QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5 \
 	-r /ip4/99.149.215.66/tcp/4001/p2p/QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5 \
 	-- \

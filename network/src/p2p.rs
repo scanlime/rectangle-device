@@ -124,7 +124,7 @@ impl NetworkBehaviourEventProcess<GossipsubEvent> for P2PVideoBehaviour {
             GossipsubEvent::Unsubscribed{..} => {},
             GossipsubEvent::Message(peer_id, _, message) => {
                 if let Ok(cid) = Cid::try_from(message.data) {
-                    log::info!("peer {} says {}", peer_id, cid.to_string());
+                    log::debug!("peer {} says {}", peer_id, cid.to_string());
                 }
             }
         }
@@ -299,9 +299,11 @@ impl P2PVideoNode {
             let player = HLSPlayer::from_hls(&hls, player_dist, &player_net);
             let player_cid = &player.directory.block.cid;
 
-            log::info!("PLAYER created ######## https://{}.ipfs.{} ######## ({} bytes) {:?}",
+            log::info!("PLAYER --- https://{}.ipfs.{}",
                 player_cid.to_string(),
-                player_net.gateway,
+                player_net.gateway);
+
+            log::info!("total size {} bytes, {:?}",
                 player.directory.total_size(),
                 player_net);
 
@@ -322,8 +324,8 @@ impl P2PVideoNode {
             Err(err) => log::warn!("couldn't publish, {:?}", err)
         }
 
-        log::info!("{:?}", Swarm::network_info(&mut self.swarm));
-        log::info!("stored {:7} bytes, {} {:?}",
+        log::debug!("{:?}", Swarm::network_info(&mut self.swarm));
+        log::debug!("stored {:7} bytes, {} {:?}",
             block_info.block.data.len(), block_info.block.cid.to_string(), usage);
 
         let hash_bytes = block_info.block.cid.hash().to_bytes();
@@ -470,7 +472,7 @@ impl Future for P2PVideoNode {
             Some(send_key) => {
                 self.swarm.blocks_to_send.remove(&send_key);
                 if let Some(block_info) = self.swarm.block_store.get(&send_key.cid.hash().to_bytes()) {
-                    log::info!("SENDING block in response to want, {} {:?} -> {}",
+                    log::debug!("SENDING block in response to want, {} {:?} -> {}",
                         send_key.cid.to_string(), send_key.usage, send_key.peer_id);
                     let peer_id = send_key.peer_id.clone();
                     let cid = send_key.cid.clone();
