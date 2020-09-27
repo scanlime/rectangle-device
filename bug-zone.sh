@@ -1,6 +1,6 @@
 #!/bin/sh
-cargo run \
-	-- \
+#cargo run -- \
+docker run `docker build . -q` \
 	--interval 5s \
 	--pin-gw http://99.149.215.66:8080 \
 	--pub-gw https://dweb.link \

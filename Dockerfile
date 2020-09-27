@@ -167,6 +167,7 @@ etc/passwd \
 etc/group \
 etc/shadow \
 etc/subuid \
+etc/subgid \
 #
 # Dynamic libraries, as needed
 lib64 \
@@ -210,6 +211,7 @@ WORKDIR /
 ENV PATH ${DEFAULT_PATH}
 USER rectangle-device
 ENTRYPOINT [ "/usr/bin/rectangle-device" ]
+CMD [ "--help" ]
 
 # Incoming libp2p connections
 EXPOSE 4004/tcp
