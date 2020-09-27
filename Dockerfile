@@ -120,8 +120,6 @@ USER root
 RUN install target/release/rectangle-device /usr/bin/rectangle-device
 
 COPY --from=podman /usr/bin/podman /usr/bin/podman
-COPY --from=crun /home/builder/crun/crun /usr/bin/crun
-COPY --from=conmon /home/builder/conmon/bin/conmon /usr/bin/conmon
 
 COPY docker/nested-podman/containers.conf /etc/containers/containers.conf
 COPY docker/nested-podman/storage.conf /etc/containers/storage.conf
@@ -130,16 +128,18 @@ COPY docker/nested-podman/registries.conf /etc/containers/registries.conf
 
 # Pull initial set of transcode images as the app user
 
+#xxx
+RUN podman pull docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
+
 USER rectangle-device
 WORKDIR /home/rectangle-device
 
-RUN podman pull docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
 
 # Packaging the parts of this image we intend to keep
 
 USER root
 WORKDIR /
-RUN tar chvf image.tar \
+RUN tar chf - \
 #
 # App
 usr/bin/rectangle-device \
@@ -155,8 +155,8 @@ usr/bin/newuidmap \
 usr/bin/podman \
 usr/libexec/podman \
 usr/bin/nsenter \
+usr/bin/runsc \
 etc/containers \
-usr/share/containers \
 var/run/containers \
 var/lib/containers \
 #
@@ -194,14 +194,15 @@ lib/x86_64-linux-gnu/libselinux.so.1 \
 lib/x86_64-linux-gnu/libpcre2-8.so.0 \
 lib/x86_64-linux-gnu/libgcrypt.so.20 \
 lib/x86_64-linux-gnu/libglib-2.0.so.0 \
-lib/x86_64-linux-gnu/libpcre.so.3
-
-RUN \
-mkdir image && \
-cd image && \
-tar pxf ../image.tar && \
-mkdir proc sys dev tmp var/tmp && \
-chmod 01777 tmp var/tmp
+lib/x86_64-linux-gnu/libpcre.so.3 \
+#
+| ( \
+  mkdir image && \
+  cd image && \
+  tar pxf - && \
+  mkdir proc sys dev tmp var/tmp && \
+  chmod 01777 tmp var/tmp \
+)
 
 FROM scratch
 ARG DEFAULT_PATH
