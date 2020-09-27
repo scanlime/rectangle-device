@@ -107,6 +107,10 @@ cd player && cargo build --release -vv 2>&1
 
 FROM skeleton as app
 COPY --chown=builder Cargo.toml Cargo.toml
+COPY --chown=builder sandbox sandbox
+COPY --chown=builder blocks blocks
+COPY --chown=builder network network
+COPY --chown=builder media media
 COPY --chown=builder src src
 RUN cargo build --release --bins 2>&1
 
