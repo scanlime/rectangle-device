@@ -134,7 +134,6 @@ RUN podman pull docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
 USER rectangle-device
 WORKDIR /home/rectangle-device
 
-
 # Packaging the parts of this image we intend to keep
 
 USER root
@@ -206,7 +205,7 @@ lib/x86_64-linux-gnu/libpcre.so.3 \
 
 FROM scratch
 ARG DEFAULT_PATH
-COPY --from=builder /image/ /
+COPY --from=app /image/ /
 WORKDIR /
 ENV PATH ${DEFAULT_PATH}
 USER rectangle-device
