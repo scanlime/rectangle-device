@@ -5,7 +5,7 @@ use crate::pinner::Pinner;
 use crate::keypair::keypair_from_openssl_rsa;
 use crate::p2p::behaviour::P2PVideoBehaviour;
 use crate::p2p::config::P2PConfig;
-use crate::p2p::peers::{split_p2p_addr, player_addr_filter};
+use crate::p2p::peers::PeerAddr;
 use rectangle_device_media::{MediaContainer, MediaUpdate, MediaUpdateBus};
 use rectangle_device_media::hls::HLSContainer;
 use rectangle_device_media::html::{HLSPlayer, HLSPlayerDist, PlayerNetworkConfig};
@@ -16,7 +16,7 @@ use core::pin::Pin;
 use futures::{Future, Stream};
 use libipld::cid::Cid;
 use async_std::task::{self, Poll, Context};
-use libp2p::{PeerId, Swarm};
+use libp2p::{PeerId, Swarm, Multiaddr};
 use libp2p::core::multiaddr::Protocol;
 use libp2p::gossipsub::error::PublishError;
 use libp2p::kad;
@@ -49,23 +49,19 @@ impl P2PVideoNode {
         let behaviour = P2PVideoBehaviour::new(local_key, &local_peer_id, &config)?;
         let mut swarm = Swarm::new(transport, behaviour, local_peer_id.clone());
 
+        let bootstrap: Vec<PeerAddr> = swarm.configured_peers.node_bootstrap().into_iter().collect();
+        let circuit_addrs: Vec<Multiaddr> = swarm.configured_peers.node_circuit_addrs().into_iter().collect();
+
         // All configured peers get used to bootstrap our DHT
-        for addr in config.router_peers.iter().chain(config.additional_peers.iter()) {
-            if let Some((peer_id, addr)) = split_p2p_addr(addr) {
-                swarm.kad_wan.add_address(&peer_id, addr);
-            }
+        for peer in bootstrap {
+            swarm.kad_wan.add_address(&peer.peer_id, peer.addr);
         }
 
-        // Router peers become part of a separate address book
-        for addr in &config.router_peers {
-            if let Some((peer_id, addr)) = split_p2p_addr(addr) {
-                let mut circuit = addr;
-                circuit.push(Protocol::P2p(peer_id.into()));
-                circuit.push(Protocol::P2pCircuit);
-                swarm.inject_new_listen_addr(&circuit);
-                circuit.push(Protocol::P2p(local_peer_id.clone().into()));
-                log::info!("listening via router {}", circuit);
-            }
+        // Add "listen" addresses using p2p-circuit via our configured routers
+        for mut addr in circuit_addrs {
+            swarm.inject_new_listen_addr(&addr);
+            addr.push(Protocol::P2p(local_peer_id.clone().into()));
+            log::info!("listening via router {}", addr);
         }
 
         swarm.kad_wan.bootstrap().unwrap();
@@ -73,6 +69,7 @@ impl P2PVideoNode {
         let topic = swarm.gossipsub_topic.clone();
         swarm.gossipsub.subscribe(topic);
 
+        // Regular local listening addresses, if we have any
         for addr in &config.listen_addrs {
             Swarm::listen_on(&mut swarm, addr.clone())?;
         }
@@ -216,21 +213,10 @@ impl P2PVideoNode {
             }
         };
 
-        let mut delegates = vec![];
-        let mut bootstrap = vec![];
-
-        for addr in &self.config.router_peers {
-            if player_addr_filter(addr) {
-                delegates.push(addr.to_string());
-                bootstrap.push(addr.to_string());
-            }
-        }
-
-        for addr in &self.config.additional_peers {
-            if player_addr_filter(addr) {
-                bootstrap.push(addr.to_string());
-            }
-        }
+        let delegates: Vec<String> = self.swarm.configured_peers
+            .player_delegates().into_iter().map(|addr| addr.to_string()).collect();
+        let bootstrap: Vec<String> = self.swarm.configured_peers
+            .player_bootstrap().into_iter().map(|addr| addr.to_string()).collect();
 
         if delegates.is_empty() {
             log::error!("can't configure the player without a viable delegate node");

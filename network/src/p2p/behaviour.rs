@@ -54,16 +54,16 @@ impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
             IdentifyEvent::Error{..} => {},
             IdentifyEvent::Received{ peer_id, info, observed_addr } => {
 
-                // Let the DHT know where we might be reachable
                 log::trace!("identified peer {}, observing us as {}", peer_id, observed_addr);
                 for addr in info.listen_addrs {
                     log::trace!("identified peer {}, listening at {}", peer_id, addr);
+
+                    // Save additional addresses for our configured peers
+                    self.configured_peers.save_known_address(&peer_id, &addr);
+
+                    // Let the DHT know where we might be reachable
                     self.kad_wan.add_address(&peer_id, addr);
                 }
-
-                // Listen to identify responses from our configured peers, storing
-                // additional addresses they claim to be reachable through
-
             }
         }
     }
