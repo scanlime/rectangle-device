@@ -1,5 +1,5 @@
 ARG UBUNTU_RELEASE=20.04
-ARG RUSTUP_TOOLCHAIN=1.44.1
+ARG RUSTUP_TOOLCHAIN=1.46.0
 ARG GOLANG_RELEASE=1.15.2
 ARG PODMAN_TAG=v2.1.0-rc2
 
@@ -87,10 +87,10 @@ ENV PATH /home/builder/.cargo/bin:${DEFAULT_PATH}
 
 FROM rust as skeleton
 COPY --chown=builder docker/skeleton/ ./
-RUN cargo build --release
+RUN cargo build --release 2>&1
 COPY --chown=builder Cargo.lock ./
 RUN target/release/rectangle-device | \
-egrep -v '^(rectangle-device|cargo|wasi|redox|wepoll|hermit|ws|win|async-proc|aesni)' \
+egrep -v '^(rectangle-device|cargo|wasi|redox|wepoll|hermit|ws|win|aesni)' \
 >> Cargo.toml && cat Cargo.toml
 RUN cargo build --release 2>&1
 
