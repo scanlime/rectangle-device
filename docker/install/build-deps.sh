@@ -9,6 +9,7 @@ apt-get install -y \
   gdb \
   git \
   iptables \
+  conmon \
   libapparmor-dev \
   libassuan-dev \
   libbtrfs-dev \
