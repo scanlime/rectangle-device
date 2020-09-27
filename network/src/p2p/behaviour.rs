@@ -1,10 +1,11 @@
 // This code may not be used for any purpose. Be gay, do crime.
 
 use crate::p2p::storage::BlockStore;
+use crate::p2p::peers::ConfiguredPeers;
+use crate::p2p::config::P2PConfig;
 use libipld::cid::Cid;
 use libipld::multihash::Multihash;
 use libp2p_bitswap::{Bitswap, BitswapEvent};
-use libp2p::Multiaddr;
 use libp2p::{PeerId, NetworkBehaviour};
 use libp2p::gossipsub::{self, Gossipsub, GossipsubConfigBuilder, MessageAuthenticity, GossipsubEvent};
 use libp2p::identify::{Identify, IdentifyEvent};
@@ -15,7 +16,6 @@ use libp2p::mdns::{Mdns, MdnsEvent};
 use libp2p::ping::{Ping, PingConfig, PingEvent};
 use libp2p::swarm::NetworkBehaviourEventProcess;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
 use std::error::Error;
 
@@ -44,7 +44,7 @@ pub struct P2PVideoBehaviour {
     pub block_store: BlockStore,
 
     #[behaviour(ignore)]
-    pub router_peer_addrs: BTreeMap<PeerId, BTreeSet<Multiaddr>>,
+    pub configured_peers: ConfiguredPeers,
 }
 
 impl NetworkBehaviourEventProcess<IdentifyEvent> for P2PVideoBehaviour {
@@ -141,7 +141,7 @@ fn kad_protocol_config(name: &'static [u8]) -> KademliaConfig {
 }
 
 impl P2PVideoBehaviour {
-    pub fn new(local_key: Keypair, local_peer_id: &PeerId) ->  Result<P2PVideoBehaviour, Box<dyn Error>> {
+    pub fn new(local_key: Keypair, local_peer_id: &PeerId, config: &P2PConfig) ->  Result<P2PVideoBehaviour, Box<dyn Error>> {
         let public_key = local_key.public().clone();
         Ok(P2PVideoBehaviour {
             gossipsub_topic: gossipsub::Topic::new(GOSSIPSUB_TOPIC.into()),
@@ -166,7 +166,7 @@ impl P2PVideoBehaviour {
                 kad_protocol_config(KAD_WAN)),
             mdns: Mdns::new()?,
             block_store: BlockStore::new(),
-            router_peer_addrs: BTreeMap::new(),
+            configured_peers: ConfiguredPeers::new(config),
         })
     }
 }

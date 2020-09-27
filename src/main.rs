@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate clap;
 
-use rectangle_device_network::p2p::{P2PVideoNode, P2PConfig, Multiaddr, Url};
+use rectangle_device_network::p2p::{P2PVideoNode, P2PConfig, Url, Multiaddr};
 use rectangle_device_media::ingest::VideoIngest;
 use rectangle_device_media::MediaUpdateBus;
 use env_logger::{Env, from_env};
