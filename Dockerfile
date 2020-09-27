@@ -128,11 +128,13 @@ COPY docker/nested-podman/registries.conf /etc/containers/registries.conf
 
 # Pull initial set of transcode images as the app user
 
-#xxx
+#xxx, testing podman as root inside the container
 RUN podman pull docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
+RUN podman run docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
 
 USER rectangle-device
 WORKDIR /home/rectangle-device
+RUN podman pull docker.io/jrottenberg/ffmpeg:4.3.1-scratch38 2>&1
 
 # Packaging the parts of this image we intend to keep
 
