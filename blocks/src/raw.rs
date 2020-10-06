@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use libipld::Ipld;
 use libipld::raw::RawCodec;
 use libipld::pb::{DagPbCodec, PbLink, PbNode};

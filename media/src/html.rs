@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use crate::hls::{HLSContainer, HLS_FILENAME};
 use rectangle_device_blocks::{Cid, BlockUsage, BlockInfo, PbLink};
 use rectangle_device_blocks::raw::{RawBlockFile, MultiRawBlockFile};

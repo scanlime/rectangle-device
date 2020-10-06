@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use crate::warmer::Warmer;
 use crate::pinner::Pinner;
 use crate::keypair::keypair_from_openssl_rsa;

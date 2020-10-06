@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use std::process::{Command, Stdio};
 use libp2p::identity::Keypair;
 use std::error::Error;

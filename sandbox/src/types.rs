@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use regex::Regex;
 use thiserror::Error;
 

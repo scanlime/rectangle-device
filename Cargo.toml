@@ -3,6 +3,9 @@ name = "rectangle-device"
 version = "0.1.0"
 authors = ["Micah Elizabeth Scott <micah@scanlime.org>"]
 edition = "2018"
+description = "Experimental decentralizable live video server"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/scanlime/rectangle-device"
 
 [dependencies]
 env_logger = "0.7.1"

@@ -14,4 +14,3 @@ Runtime dependencies:
   with transcode containers. if you use another OS, run this inside docker or your favorite virtual machine.
 - openssl -- just used temporarily for generating keys, as a bug workaround
 - podman -- [get the thing](https://podman.io/getting-started/installation). this is a lightweight container manager and runtime which does not require any additional privileges to run. this is used to manage sandboxed reproducible transcodes, with hashed ffmpeg images.
-

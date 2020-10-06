@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use rectangle_device_blocks::{BlockUsage, BlockInfo, Cid};

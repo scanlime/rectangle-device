@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use rectangle_device_blocks::{BlockUsage, BlockInfo, BLOCK_MAX_BYTES};
 use rectangle_device_blocks::raw::RawBlockFile;
 use rectangle_device_blocks::package::Package;

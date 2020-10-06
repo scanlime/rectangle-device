@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use crate::types::{ImageDigest, SandboxError};
 use async_process::{Command, Stdio};
 use std::error::Error;

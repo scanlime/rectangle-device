@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use libipld::codec_impl::Multicodec;
 use libipld::multihash::Multihash;
 

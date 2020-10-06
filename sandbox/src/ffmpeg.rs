@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use std::error::Error;
 use async_process::{Stdio, Child};
 use crate::runtime;

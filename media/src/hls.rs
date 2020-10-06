@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use crate::MediaContainer;
 use rectangle_device_blocks::{BlockInfo, BlockUsage, PbLink};
 use rectangle_device_blocks::raw::RawBlockFile;

@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use crate::p2p::config::P2PConfig;
 use libp2p::PeerId;
 use libp2p::core::multiaddr::Protocol;

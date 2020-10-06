@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use crate::p2p::storage::BlockStore;
 use crate::p2p::peers::ConfiguredPeers;
 use crate::p2p::config::P2PConfig;

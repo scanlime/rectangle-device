@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use async_std::os::unix::net::UnixListener;
 use std::error::Error;
 use std::fs::Permissions;

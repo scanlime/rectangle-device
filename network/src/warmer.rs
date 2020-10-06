@@ -1,5 +1,3 @@
-// This code may not be used for any purpose. Be gay, do crime.
-
 use async_std::sync::{channel, Sender, Receiver, TrySendError};
 use std::time::Duration;
 use reqwest::{Client, StatusCode, Url};
