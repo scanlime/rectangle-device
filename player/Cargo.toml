@@ -1,6 +1,6 @@
 [package]
 name = "rectangle-device-player"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Micah Elizabeth Scott <micah@scanlime.org>"]
 edition = "2018"
 description = "Player client for an experimental decentralizable live video server"

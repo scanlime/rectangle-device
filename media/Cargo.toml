@@ -1,6 +1,6 @@
 [package]
 name = "rectangle-device-media"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Micah Elizabeth Scott <micah@scanlime.org>"]
 edition = "2018"
 description = "Media format support for an experimental decentralizable live video server"
@@ -15,6 +15,6 @@ mpeg2ts = "0.1.1"
 rand = "0.7.3"
 thiserror = "1.0"
 
-rectangle-device-player = { version = "0.1.0", path = "../player" }
-rectangle-device-sandbox = { version = "0.1.0", path = "../sandbox" }
-rectangle-device-blocks = { version = "0.1.0", path = "../blocks" }
+rectangle-device-player = { version = "0.1.1", path = "../player" }
+rectangle-device-sandbox = { version = "0.1.1", path = "../sandbox" }
+rectangle-device-blocks = { version = "0.1.1", path = "../blocks" }

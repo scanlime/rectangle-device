@@ -579,6 +579,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "checked_int_cast"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17cc5e6b5ab06331c33589842070416baa137e8b0eb912b008cfd4a78ada7919"
+
+[[package]]
 name = "clap"
 version = "2.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -667,6 +673,31 @@ dependencies = [
  "autocfg",
  "cfg-if",
  "lazy_static",
+]
+
+[[package]]
+name = "crossterm"
+version = "0.17.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f4919d60f26ae233e14233cc39746c8c8bb8cd7b05840ace83604917b51b6c7"
+dependencies = [
+ "bitflags",
+ "crossterm_winapi",
+ "lazy_static",
+ "libc",
+ "mio 0.7.2",
+ "parking_lot 0.10.2",
+ "signal-hook",
+ "winapi 0.3.9",
+]
+
+[[package]]
+name = "crossterm_winapi"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "057b7146d02fb50175fd7dbe5158f6097f33d02831f43b4ee8ae4ddf67b68f5c"
+dependencies = [
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -2108,10 +2139,23 @@ dependencies = [
  "kernel32-sys",
  "libc",
  "log",
- "miow",
+ "miow 0.2.1",
  "net2",
  "slab",
  "winapi 0.2.8",
+]
+
+[[package]]
+name = "mio"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d5fc35678fa91ff960494e4bd72a0e1f8e72e035460887a2005de51915993cd"
+dependencies = [
+ "libc",
+ "log",
+ "miow 0.3.5",
+ "ntapi",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -2124,6 +2168,16 @@ dependencies = [
  "net2",
  "winapi 0.2.8",
  "ws2_32-sys",
+]
+
+[[package]]
+name = "miow"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07b88fb9795d4d36d62a012dfbf49a8f5cf12751f36d31a9dbe66d528e58979e"
+dependencies = [
+ "socket2",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -2236,6 +2290,15 @@ dependencies = [
  "lexical-core",
  "memchr",
  "version_check",
+]
+
+[[package]]
+name = "ntapi"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a31937dea023539c72ddae0e3571deadc1414b300483fa7aaec176168cfa9d2"
+dependencies = [
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -2586,6 +2649,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "qr2term"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "840dd4cfb8e5c79316c869eb2b5151ef9b266235e4c8fd014f2c4ae6e1ed7fa8"
+dependencies = [
+ "crossterm",
+ "qrcode",
+]
+
+[[package]]
+name = "qrcode"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16d2f1455f3630c6e5107b4f2b94e74d76dea80736de0981fd27644216cff57f"
+dependencies = [
+ "checked_int_cast",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2701,7 +2783,7 @@ dependencies = [
 
 [[package]]
 name = "rectangle-device"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-std",
  "clap",
@@ -2715,7 +2797,7 @@ dependencies = [
 
 [[package]]
 name = "rectangle-device-blocks"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-std",
  "leb128",
@@ -2727,7 +2809,7 @@ dependencies = [
 
 [[package]]
 name = "rectangle-device-media"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-std",
  "log",
@@ -2742,7 +2824,7 @@ dependencies = [
 
 [[package]]
 name = "rectangle-device-network"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-std",
  "futures",
@@ -2750,6 +2832,7 @@ dependencies = [
  "libp2p",
  "libp2p-bitswap",
  "log",
+ "qr2term",
  "rand 0.7.3",
  "rectangle-device-blocks",
  "rectangle-device-media",
@@ -2761,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "rectangle-device-player"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "askama",
  "build-deps",
@@ -2769,7 +2852,7 @@ dependencies = [
 
 [[package]]
 name = "rectangle-device-sandbox"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-process",
  "async-std",
@@ -3106,6 +3189,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "604508c1418b99dfe1925ca9224829bb2a8a9a04dda655cc01fcad46f4ab05ed"
 dependencies = [
  "libc",
+ "mio 0.7.2",
  "signal-hook-registry",
 ]
 
@@ -3397,7 +3481,7 @@ dependencies = [
  "iovec",
  "lazy_static",
  "memchr",
- "mio",
+ "mio 0.6.22",
  "pin-project-lite",
  "slab",
 ]

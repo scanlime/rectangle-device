@@ -1,6 +1,6 @@
 [package]
 name = "rectangle-device"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Micah Elizabeth Scott <micah@scanlime.org>"]
 edition = "2018"
 description = "Experimental decentralizable live video server"
@@ -15,8 +15,8 @@ humantime = "2.0.1"
 clap = { version = "2.33.3", features = ["yaml"] }
 async-std = { version = "1.6.0", features = ["unstable"] }
 
-rectangle-device-network = { version = "0.1.0", path = "network" }
-rectangle-device-media = { version = "0.1.0", path = "media" }
+rectangle-device-network = { version = "0.1.1", path = "network" }
+rectangle-device-media = { version = "0.1.1", path = "media" }
 
 [workspace]
 members = [ "player", "sandbox", "blocks", "network", "media" ]
