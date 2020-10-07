@@ -9,6 +9,7 @@ fi
 $cmd \
   --interval 5s \
   --pin-gw http://99.149.215.66:8080 \
+  --pin http://99.149.215.66:5000/api/v1/ \
   --pub-gw https://dweb.link \
   --router /ip4/99.149.215.66/tcp/4001/p2p/QmPjtoXdQobBpWa2yS4rfmHVDoCbom2r2SMDTUa1Nk7kJ5 \
   -- \
