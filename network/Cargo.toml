@@ -19,6 +19,7 @@ serde = "1.0.116"
 reqwest = { version = "0.10.8", features = ["json"] }
 tokio = "0.2.22"
 url = "2.1.1"
+qr2term = "0.2.1"
 
 rectangle-device-blocks = { version = "0.1.0", path = "../blocks" }
 rectangle-device-media = { version = "0.1.0", path = "../media" }

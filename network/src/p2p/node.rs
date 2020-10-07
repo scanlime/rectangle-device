@@ -120,9 +120,12 @@ impl P2PVideoNode {
             let player = HLSPlayer::from_hls(&hls, player_dist, &player_net);
             let player_cid = &player.directory.block.cid;
 
-            log::info!("PLAYER --- https://{}.ipfs.{}",
+            let player_url = format!("https://{}.ipfs.{}/",
                 player_cid.to_string(),
                 player_net.gateway);
+
+            qr2term::print_qr(&player_url).unwrap();
+            log::info!("PLAYER --- {}", player_url);
 
             log::info!("total size {} bytes, {:?}",
                 player.directory.total_size(),
