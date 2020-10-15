@@ -1,5 +1,5 @@
-use url::Url;
 use libp2p::Multiaddr;
+use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct P2PConfig {

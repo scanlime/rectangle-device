@@ -1,6 +1,6 @@
-use async_std::sync::{channel, Sender, Receiver, TrySendError};
-use std::time::Duration;
+use async_std::sync::{channel, Receiver, Sender, TrySendError};
 use reqwest::{Client, StatusCode, Url};
+use std::time::Duration;
 
 #[derive(Debug)]
 struct QueueItem {
@@ -26,17 +26,14 @@ impl Warmer {
     }
 
     pub fn send(&self, url: Url) {
-        match self.sender.try_send(QueueItem {
-            url,
-            try_num: 0
-        }) {
-            Ok(()) => {},
+        match self.sender.try_send(QueueItem { url, try_num: 0 }) {
+            Ok(()) => {}
             Err(TrySendError::Full(item)) => {
                 log::error!("queue full, dropping {:?}", item);
-            },
+            }
             Err(TrySendError::Disconnected(item)) => {
                 log::error!("queue disconnected, dropping {:?}", item);
-            },
+            }
         }
     }
 
@@ -56,7 +53,8 @@ impl Warmer {
     async fn pool_task(&self, pool_id: usize) {
         let client = Client::builder()
             .timeout(Duration::from_millis(TIMEOUT_MSEC))
-            .build().unwrap();
+            .build()
+            .unwrap();
 
         loop {
             let item = self.receiver.recv().await.unwrap();
@@ -66,14 +64,19 @@ impl Warmer {
             match result.map(|r| r.status()) {
                 Ok(StatusCode::OK) => {
                     log::debug!("[{}] try# {}, {}", pool_id, item.try_num, item.url);
-                },
+                }
                 err => {
                     let next_try = QueueItem {
                         url: item.url,
                         try_num: item.try_num + 1,
                     };
                     if next_try.try_num > NUM_RETRIES {
-                        log::error!("[{}] failed {} after {} tries", pool_id, next_try.url, item.try_num);
+                        log::error!(
+                            "[{}] failed {} after {} tries",
+                            pool_id,
+                            next_try.url,
+                            item.try_num
+                        );
                     } else {
                         log::trace!("[{}] {:?}, retrying later", pool_id, err);
                         self.sender.send(next_try).await;

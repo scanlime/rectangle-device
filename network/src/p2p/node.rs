@@ -1,28 +1,31 @@
-use crate::warmer::Warmer;
-use crate::pinner::Pinner;
-use crate::keypair::keypair_from_openssl_rsa;
-use crate::p2p::behaviour::P2PVideoBehaviour;
-use crate::p2p::config::P2PConfig;
-use crate::p2p::peers::PeerAddr;
-use rectangle_device_media::{MediaContainer, MediaUpdate, MediaUpdateBus};
-use rectangle_device_media::hls::HLSContainer;
-use rectangle_device_media::html::{HLSPlayer, HLSPlayerDist, PlayerNetworkConfig};
-use rectangle_device_blocks::{BlockUsage, BlockInfo};
-use rectangle_device_blocks::package::Package;
-use async_std::sync::Receiver;
+use crate::{
+    keypair::keypair_from_openssl_rsa,
+    p2p::{behaviour::P2PVideoBehaviour, config::P2PConfig, peers::PeerAddr},
+    pinner::Pinner,
+    warmer::Warmer,
+};
+use async_std::{
+    sync::Receiver,
+    task::{self, Context, Poll},
+};
 use core::pin::Pin;
 use futures::{Future, Stream};
 use libipld::cid::Cid;
-use async_std::task::{self, Poll, Context};
-use libp2p::{PeerId, Swarm, Multiaddr};
-use libp2p::core::multiaddr::Protocol;
-use libp2p::gossipsub::error::PublishError;
-use libp2p::kad;
-use libp2p::swarm::{SwarmEvent, NetworkBehaviour};
-use rand::thread_rng;
-use rand::seq::SliceRandom;
-use std::thread;
-use std::error::Error;
+use libp2p::{
+    core::multiaddr::Protocol,
+    gossipsub::error::PublishError,
+    kad,
+    swarm::{NetworkBehaviour, SwarmEvent},
+    Multiaddr, PeerId, Swarm,
+};
+use rand::{seq::SliceRandom, thread_rng};
+use rectangle_device_blocks::{package::Package, BlockInfo, BlockUsage};
+use rectangle_device_media::{
+    hls::HLSContainer,
+    html::{HLSPlayer, HLSPlayerDist, PlayerNetworkConfig},
+    MediaContainer, MediaUpdate, MediaUpdateBus,
+};
+use std::{error::Error, thread};
 
 pub struct P2PVideoNode {
     config: P2PConfig,
@@ -35,7 +38,6 @@ pub struct P2PVideoNode {
 
 impl P2PVideoNode {
     pub fn new(mub: &MediaUpdateBus, config: P2PConfig) -> Result<P2PVideoNode, Box<dyn Error>> {
-
         let pinner = Pinner::new();
         let warmer = Warmer::new();
 
@@ -47,8 +49,16 @@ impl P2PVideoNode {
         let behaviour = P2PVideoBehaviour::new(local_key, &local_peer_id, &config)?;
         let mut swarm = Swarm::new(transport, behaviour, local_peer_id.clone());
 
-        let bootstrap: Vec<PeerAddr> = swarm.configured_peers.node_bootstrap().into_iter().collect();
-        let circuit_addrs: Vec<Multiaddr> = swarm.configured_peers.node_circuit_addrs().into_iter().collect();
+        let bootstrap: Vec<PeerAddr> = swarm
+            .configured_peers
+            .node_bootstrap()
+            .into_iter()
+            .collect();
+        let circuit_addrs: Vec<Multiaddr> = swarm
+            .configured_peers
+            .node_circuit_addrs()
+            .into_iter()
+            .collect();
 
         // All configured peers get used to bootstrap our DHT
         for peer in bootstrap {
@@ -93,13 +103,25 @@ impl P2PVideoNode {
         let warmer = self.warmer.clone();
         let pinner = self.pinner.clone();
 
-        let warmer_thread = thread::Builder::new().name("net-warmer".to_string())
-            .spawn(move || tokio::runtime::Runtime::new().unwrap().block_on(warmer.task()))?;
+        let warmer_thread = thread::Builder::new()
+            .name("net-warmer".to_string())
+            .spawn(move || {
+                tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(warmer.task())
+            })?;
 
-        let pinner_thread = thread::Builder::new().name("net-pinner".to_string())
-            .spawn(move || tokio::runtime::Runtime::new().unwrap().block_on(pinner.task()))?;
+        let pinner_thread = thread::Builder::new()
+            .name("net-pinner".to_string())
+            .spawn(move || {
+                tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(pinner.task())
+            })?;
 
-        task::Builder::new().name("net-node".to_string()).blocking(self);
+        task::Builder::new()
+            .name("net-node".to_string())
+            .blocking(self);
 
         warmer_thread.join().unwrap();
         pinner_thread.join().unwrap();
@@ -120,16 +142,20 @@ impl P2PVideoNode {
             let player = HLSPlayer::from_hls(&hls, player_dist, &player_net);
             let player_cid = &player.directory.block.cid;
 
-            let player_url = format!("https://{}.ipfs.{}/",
+            let player_url = format!(
+                "https://{}.ipfs.{}/",
                 player_cid.to_string(),
-                player_net.gateway);
+                player_net.gateway
+            );
 
             qr2term::print_qr(&player_url).unwrap();
             log::info!("PLAYER --- {}", player_url);
 
-            log::info!("total size {} bytes, {:?}",
+            log::info!(
+                "total size {} bytes, {:?}",
                 player.directory.total_size(),
-                player_net);
+                player_net
+            );
 
             for block_info in hls.into_blocks().into_iter().chain(player.into_blocks()) {
                 self.store_block(block_info);
@@ -143,18 +169,28 @@ impl P2PVideoNode {
 
         let topic = self.swarm.gossipsub_topic.clone();
         match self.swarm.gossipsub.publish(&topic, cid.to_bytes()) {
-            Ok(()) => {},
-            Err(PublishError::InsufficientPeers) => {},
-            Err(err) => log::warn!("couldn't publish, {:?}", err)
+            Ok(()) => {}
+            Err(PublishError::InsufficientPeers) => {}
+            Err(err) => log::warn!("couldn't publish, {:?}", err),
         }
 
         log::debug!("{:?}", Swarm::network_info(&mut self.swarm));
-        log::debug!("stored {:7} bytes, {} {:?}",
-            block_info.block.data.len(), block_info.block.cid.to_string(), usage);
+        log::debug!(
+            "stored {:7} bytes, {} {:?}",
+            block_info.block.data.len(),
+            block_info.block.cid.to_string(),
+            usage
+        );
 
         let hash_bytes = block_info.block.cid.hash().to_bytes();
-        self.swarm.kad_lan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
-        self.swarm.kad_wan.start_providing(kad::record::Key::new(&hash_bytes)).unwrap();
+        self.swarm
+            .kad_lan
+            .start_providing(kad::record::Key::new(&hash_bytes))
+            .unwrap();
+        self.swarm
+            .kad_wan
+            .start_providing(kad::record::Key::new(&hash_bytes))
+            .unwrap();
 
         self.swarm.block_store.data.insert(hash_bytes, block_info);
 
@@ -167,7 +203,8 @@ impl P2PVideoNode {
 
         // Load this block into all gateways that we expect to pin this block eventually
         for gateway in &self.config.pinning_gateways {
-            self.warmer.send(gateway.join("ipfs/").unwrap().join(&cid_str).unwrap());
+            self.warmer
+                .send(gateway.join("ipfs/").unwrap().join(&cid_str).unwrap());
         }
 
         match usage {
@@ -175,7 +212,8 @@ impl P2PVideoNode {
             _ => {
                 for gateway in &self.config.public_gateways {
                     // Only send non-video (player, directory) blocks to public gateways
-                    self.warmer.send(gateway.join("ipfs/").unwrap().join(&cid_str).unwrap());
+                    self.warmer
+                        .send(gateway.join("ipfs/").unwrap().join(&cid_str).unwrap());
                 }
             }
         }
@@ -188,10 +226,17 @@ impl P2PVideoNode {
                 for api in &self.config.pinning_services {
                     let peer_id = Swarm::local_peer_id(&self.swarm);
                     let addrs = Swarm::external_addresses(&self.swarm);
-                    let origins: Vec<String> = addrs.map(|addr| format!("{}/p2p/{}", addr, peer_id)).collect();
-                    self.pinner.send(api.clone(), cid.to_string(), format!("{:?}", usage), origins);
+                    let origins: Vec<String> = addrs
+                        .map(|addr| format!("{}/p2p/{}", addr, peer_id))
+                        .collect();
+                    self.pinner.send(
+                        api.clone(),
+                        cid.to_string(),
+                        format!("{:?}", usage),
+                        origins,
+                    );
                 }
-            },
+            }
             _ => {}
         }
     }
@@ -210,14 +255,24 @@ impl P2PVideoNode {
             let mut rng = thread_rng();
             match gateways.choose_mut(&mut rng) {
                 Some(g) => Some(std::mem::take(g)),
-                None => None
+                None => None,
             }
         };
 
-        let delegates: Vec<String> = self.swarm.configured_peers
-            .player_delegates().into_iter().map(|addr| addr.to_string()).collect();
-        let bootstrap: Vec<String> = self.swarm.configured_peers
-            .player_bootstrap().into_iter().map(|addr| addr.to_string()).collect();
+        let delegates: Vec<String> = self
+            .swarm
+            .configured_peers
+            .player_delegates()
+            .into_iter()
+            .map(|addr| addr.to_string())
+            .collect();
+        let bootstrap: Vec<String> = self
+            .swarm
+            .configured_peers
+            .player_bootstrap()
+            .into_iter()
+            .map(|addr| addr.to_string())
+            .collect();
 
         if delegates.is_empty() {
             log::error!("can't configure the player without a viable delegate node");
@@ -227,10 +282,12 @@ impl P2PVideoNode {
                 None => {
                     log::error!("can't configure the player without at least one public gateway");
                     None
-                },
+                }
                 Some(gateway) => Some(PlayerNetworkConfig {
-                    gateway, delegates, bootstrap,
-                })
+                    gateway,
+                    delegates,
+                    bootstrap,
+                }),
             }
         }
     }
@@ -240,16 +297,26 @@ impl Future for P2PVideoNode {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-
         // At most one bitswap sent block per wakeup for now, to keep networ from getting overwhelmed
         match self.swarm.block_store.next_send() {
-            None => {},
+            None => {}
             Some(request) => {
-                if let Some(block_info) = self.swarm.block_store.data.get(&request.cid.hash().to_bytes()) {
-                    log::debug!("SENDING block in response to want, {} {:?} -> {}",
-                        request.cid.to_string(), request.usage, request.peer_id);
+                if let Some(block_info) = self
+                    .swarm
+                    .block_store
+                    .data
+                    .get(&request.cid.hash().to_bytes())
+                {
+                    log::debug!(
+                        "SENDING block in response to want, {} {:?} -> {}",
+                        request.cid.to_string(),
+                        request.usage,
+                        request.peer_id
+                    );
                     let data = block_info.block.data.clone();
-                    self.swarm.bitswap.send_block(&request.peer_id, request.cid, data);
+                    self.swarm
+                        .bitswap
+                        .send_block(&request.peer_id, request.cid, data);
                 }
             }
         }
@@ -259,18 +326,18 @@ impl Future for P2PVideoNode {
             match self.media_receiver.take() {
                 None => {
                     break;
-                },
+                }
                 Some(mut receiver) => {
                     let event = Pin::new(&mut receiver).poll_next(ctx);
                     match event {
                         Poll::Pending => {
                             self.media_receiver = Some(receiver);
                             break;
-                        },
+                        }
                         Poll::Ready(None) => {
                             drop(receiver);
                             break;
-                        },
+                        }
                         Poll::Ready(Some(update)) => {
                             self.media_receiver = Some(receiver);
                             self.media_update_received(update);
@@ -282,19 +349,20 @@ impl Future for P2PVideoNode {
 
         // Poll network until it's fully blocked on I/O
         loop {
-            let network_event = unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
+            let network_event =
+                unsafe { Pin::new_unchecked(&mut self.swarm.next_event()) }.poll(ctx);
             match network_event {
                 Poll::Pending => {
                     return Poll::Pending;
-                },
+                }
                 Poll::Ready(SwarmEvent::NewListenAddr(addr)) => {
                     let peer_id = Swarm::local_peer_id(&self.swarm).clone();
                     log::info!("listening at {}/p2p/{}", addr, peer_id);
                     self.swarm.kad_lan.add_address(&peer_id, addr);
-                },
+                }
                 Poll::Ready(x) => {
                     log::trace!("network event {:?}", x);
-                },
+                }
             }
         }
     }

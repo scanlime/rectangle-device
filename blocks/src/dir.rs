@@ -1,17 +1,23 @@
-use libipld::Ipld;
-use libipld::pb::{DagPbCodec, PbNode};
+use crate::{
+    core::{Block, Cid, DefaultHashType, BLOCK_MAX_BYTES},
+    package::Package,
+    unixfs,
+};
+use libipld::{
+    pb::{DagPbCodec, PbNode},
+    Ipld,
+};
 use prost::Message;
-use std::iter::{once, Once};
-use std::convert::TryFrom;
-use crate::core::{Block, Cid, DefaultHashType, BLOCK_MAX_BYTES};
-use crate::package::Package;
-use crate::unixfs;
+use std::{
+    convert::TryFrom,
+    iter::{once, Once},
+};
 
 pub use libipld::pb::PbLink;
 
 pub struct DirectoryBlock {
     pub block: Block,
-    pub links: Vec<PbLink>
+    pub links: Vec<PbLink>,
 }
 
 impl DirectoryBlock {
@@ -22,7 +28,7 @@ impl DirectoryBlock {
             filesize: None,
             data: None,
             hash_type: None,
-            fanout: None
+            fanout: None,
         };
 
         let mut data = vec![];

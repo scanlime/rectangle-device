@@ -1,15 +1,13 @@
-use libipld::codec_impl::Multicodec;
-use libipld::multihash::Multihash;
+use libipld::{codec_impl::Multicodec, multihash::Multihash};
 
 // This is an architectural limit in IPFS, chosen to limit the amount of memory
 // needed by bitswap to buffer not-yet-verified data from peers.
-pub const BLOCK_MAX_BYTES : usize = 1024 * 1024;
+pub const BLOCK_MAX_BYTES: usize = 1024 * 1024;
 
 pub use libipld::multihash::SHA2_256 as DefaultHashType;
 
 pub type Block = libipld::block::Block<Multicodec, Multihash>;
-pub use libipld::cid::Cid;
-pub use libipld::pb::PbLink;
+pub use libipld::{cid::Cid, pb::PbLink};
 
 #[derive(Debug, Ord, PartialOrd, PartialEq, Eq, Clone)]
 pub enum BlockUsage {

@@ -12,23 +12,23 @@ pub enum SandboxError {
 }
 
 #[derive(Clone, Debug)]
-pub struct ImageDigest{
+pub struct ImageDigest {
     pub image: Image,
-    pub digest: Digest
+    pub digest: Digest,
 }
 
 impl ImageDigest {
     pub fn parse(image: &str, digest: &str) -> Result<ImageDigest, SandboxError> {
-        Ok(ImageDigest{
+        Ok(ImageDigest {
             image: Image::parse(image)?,
-            digest: Digest::parse(digest)?
+            digest: Digest::parse(digest)?,
         })
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct Image {
-    inner: String
+    inner: String,
 }
 
 impl Image {
@@ -90,7 +90,7 @@ impl Image {
 
 #[derive(Clone, Debug)]
 pub struct Digest {
-    inner: String
+    inner: String,
 }
 
 impl Digest {

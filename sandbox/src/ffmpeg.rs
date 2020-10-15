@@ -1,8 +1,6 @@
+use crate::{runtime, socket::SocketPool, types::ImageDigest};
+use async_process::{Child, Stdio};
 use std::error::Error;
-use async_process::{Stdio, Child};
-use crate::runtime;
-use crate::socket::SocketPool;
-use crate::types::ImageDigest;
 
 pub fn default_image() -> ImageDigest {
     // Video transcoder image to use. This should be replaced with a locally preferred image
@@ -15,8 +13,9 @@ pub fn default_image() -> ImageDigest {
 
     ImageDigest::parse(
         "docker.io/jrottenberg/ffmpeg:4.3.1-scratch38",
-        "68126e39534eff79a8a4a4b7b546a11b8165a1ee8f1af93166d3071b170280a1"
-    ).unwrap()
+        "68126e39534eff79a8a4a4b7b546a11b8165a1ee8f1af93166d3071b170280a1",
+    )
+    .unwrap()
 }
 
 #[derive(Clone, Debug)]
@@ -28,7 +27,6 @@ pub struct TranscodeConfig {
 }
 
 pub async fn start(tc: TranscodeConfig, pool: &SocketPool) -> Result<Child, Box<dyn Error>> {
-
     if !runtime::image_exists(&tc.image).await? {
         runtime::pull(&tc.image).await?;
     }
@@ -47,9 +45,7 @@ pub async fn start(tc: TranscodeConfig, pool: &SocketPool) -> Result<Child, Box<
         .arg("--privileged=false");
 
     if tc.allow_networking {
-        command
-            .arg("--net=slirp4netns")
-            .arg("--dns-search=.");
+        command.arg("--net=slirp4netns").arg("--dns-search=.");
     } else {
         command.arg("--net=none");
     }
@@ -64,11 +60,16 @@ pub async fn start(tc: TranscodeConfig, pool: &SocketPool) -> Result<Child, Box<
     command
         .arg("-nostats")
         .arg("-nostdin")
-        .arg("-loglevel").arg("error")
-        .arg("-f").arg("stream_segment")
-        .arg("-segment_format").arg("mpegts")
-        .arg("-segment_wrap").arg("1")
-        .arg("-segment_time").arg(tc.segment_time.to_string())
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-f")
+        .arg("stream_segment")
+        .arg("-segment_format")
+        .arg("mpegts")
+        .arg("-segment_wrap")
+        .arg("1")
+        .arg("-segment_time")
+        .arg(tc.segment_time.to_string())
         .arg("unix:///out/%d.ts");
 
     log::info!("starting, {:?}", command);

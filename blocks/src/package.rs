@@ -1,7 +1,7 @@
 use crate::core::{Block, Cid, PbLink};
 
 pub trait Package {
-    type BlockIterator: Iterator<Item=Block>;
+    type BlockIterator: Iterator<Item = Block>;
 
     fn cid(&self) -> &Cid;
     fn total_size(&self) -> u64;
@@ -11,7 +11,7 @@ pub trait Package {
         PbLink {
             cid: self.cid().clone(),
             size: self.total_size(),
-            name
+            name,
         }
     }
 }

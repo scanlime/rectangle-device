@@ -1,11 +1,9 @@
-#[macro_use]
-extern crate clap;
+#[macro_use] extern crate clap;
 
-use rectangle_device_network::p2p::{P2PVideoNode, P2PConfig, Url, Multiaddr};
-use rectangle_device_media::ingest::VideoIngest;
-use rectangle_device_media::MediaUpdateBus;
-use env_logger::{Env, from_env};
 use clap::{App, ArgMatches};
+use env_logger::{from_env, Env};
+use rectangle_device_media::{ingest::VideoIngest, MediaUpdateBus};
+use rectangle_device_network::p2p::{Multiaddr, P2PConfig, P2PVideoNode, Url};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -28,7 +26,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let video_args = string_values(&matches, "video_args");
     let publish_interval = matches.value_of("publish_interval").unwrap();
-    let publish_interval = publish_interval.parse::<humantime::Duration>()
+    let publish_interval = publish_interval
+        .parse::<humantime::Duration>()
         .expect("expected a valid `humantime`-compatible duration argument");
 
     let mub = MediaUpdateBus::new();

@@ -1,8 +1,7 @@
-use async_std::sync::{channel, Sender, Receiver, TrySendError};
-use std::error::Error;
-use std::time::Duration;
-use serde::{Deserialize, Serialize};
+use async_std::sync::{channel, Receiver, Sender, TrySendError};
 use reqwest::{Client, Url};
+use serde::{Deserialize, Serialize};
+use std::{error::Error, time::Duration};
 
 const POOL_SIZE: usize = 4;
 const QUEUE_SIZE: usize = 100;
@@ -49,19 +48,15 @@ impl Pinner {
             api,
             // To do: reuse old pins, use pin completion to GC blocks from ram
             id: None,
-            pin: APIPin {
-                cid,
-                name,
-                origins
-            }
+            pin: APIPin { cid, name, origins },
         }) {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(TrySendError::Full(item)) => {
                 log::error!("queue full, dropping {:?}", item);
-            },
+            }
             Err(TrySendError::Disconnected(item)) => {
                 log::error!("queue disconnected, dropping {:?}", item);
-            },
+            }
         }
     }
 
@@ -81,7 +76,8 @@ impl Pinner {
     async fn pool_task(&self, pool_id: usize) {
         let client = Client::builder()
             .timeout(Duration::from_millis(TIMEOUT_MSEC))
-            .build().unwrap();
+            .build()
+            .unwrap();
 
         loop {
             let item = self.receiver.recv().await.unwrap();
@@ -99,14 +95,15 @@ impl Pinner {
                 let status: APIPinStatus = result.json().await?;
                 log::info!("pinning api says {:?}", status);
                 Result::<String, Box<dyn Error>>::Ok(status.id)
-            }.await;
+            }
+            .await;
 
             // to do: track pinning progress
             let _id = match result {
                 Err(err) => {
                     log::warn!("pinning api error, {}", err);
                     None
-                },
+                }
                 Ok(new_id) => Some(new_id),
             };
         }

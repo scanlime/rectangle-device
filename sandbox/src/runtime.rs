@@ -9,9 +9,12 @@ pub fn command() -> Command {
 pub async fn image_exists(id: &ImageDigest) -> Result<bool, Box<dyn Error>> {
     let mut command = command();
     Ok(command
-        .arg("image").arg("exists")
+        .arg("image")
+        .arg("exists")
         .arg(id.digest.as_str())
-        .status().await?.success())
+        .status()
+        .await?
+        .success())
 }
 
 pub async fn pull(id: &ImageDigest) -> Result<(), Box<dyn Error>> {
@@ -21,7 +24,10 @@ pub async fn pull(id: &ImageDigest) -> Result<(), Box<dyn Error>> {
             .arg("pull")
             .arg(id.image.as_str())
             .stderr(Stdio::inherit())
-            .output().await?.stdout)?;
+            .output()
+            .await?
+            .stdout,
+    )?;
 
     let digest = digest.trim();
     if digest == id.digest.as_str() {

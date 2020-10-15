@@ -1,12 +1,18 @@
-use libipld::Ipld;
-use libipld::raw::RawCodec;
-use libipld::pb::{DagPbCodec, PbLink, PbNode};
+use crate::{
+    core::{Block, Cid, DefaultHashType, BLOCK_MAX_BYTES},
+    package::Package,
+    unixfs,
+};
+use libipld::{
+    pb::{DagPbCodec, PbLink, PbNode},
+    raw::RawCodec,
+    Ipld,
+};
 use prost::Message;
-use std::iter::{once, Once, Chain, Map, Flatten};
-use std::vec;
-use crate::core::{Block, Cid, DefaultHashType, BLOCK_MAX_BYTES};
-use crate::package::Package;
-use crate::unixfs;
+use std::{
+    iter::{once, Chain, Flatten, Map, Once},
+    vec,
+};
 
 #[derive(Clone)]
 pub struct RawBlockFile {
@@ -16,7 +22,9 @@ pub struct RawBlockFile {
 impl RawBlockFile {
     pub fn new(data: &[u8]) -> RawBlockFile {
         assert!(data.len() <= BLOCK_MAX_BYTES);
-        RawBlockFile { block: Block::encode(RawCodec, DefaultHashType, data).unwrap() }
+        RawBlockFile {
+            block: Block::encode(RawCodec, DefaultHashType, data).unwrap(),
+        }
     }
 }
 
@@ -51,7 +59,10 @@ impl MultiRawBlockFile {
 
     pub fn new(parts: Vec<RawBlockFile>) -> MultiRawBlockFile {
         let links: Vec<PbLink> = parts.iter().map(|part| part.link("".to_string())).collect();
-        let sizes: Vec<u64> = parts.iter().map(|part| part.block.data.len() as u64).collect();
+        let sizes: Vec<u64> = parts
+            .iter()
+            .map(|part| part.block.data.len() as u64)
+            .collect();
         let filesize = sizes.iter().sum();
 
         let file = unixfs::pb::Data {
@@ -60,13 +71,16 @@ impl MultiRawBlockFile {
             filesize: Some(filesize),
             data: None,
             hash_type: None,
-            fanout: None
+            fanout: None,
         };
 
         let node = {
             let mut data: Vec<u8> = vec![];
             file.encode(&mut data).unwrap();
-            PbNode { links, data: data.into_boxed_slice() }
+            PbNode {
+                links,
+                data: data.into_boxed_slice(),
+            }
         };
         let ipld: Ipld = node.into();
 
@@ -82,7 +96,8 @@ impl MultiRawBlockFile {
 type RawIntoBlocksFn = fn(RawBlockFile) -> <RawBlockFile as Package>::BlockIterator;
 
 impl Package for MultiRawBlockFile {
-    type BlockIterator = Chain<Once<Block>, Flatten<Map< vec::IntoIter<RawBlockFile>, RawIntoBlocksFn >>>;
+    type BlockIterator =
+        Chain<Once<Block>, Flatten<Map<vec::IntoIter<RawBlockFile>, RawIntoBlocksFn>>>;
 
     fn cid(&self) -> &Cid {
         &self.root.cid
@@ -95,6 +110,11 @@ impl Package for MultiRawBlockFile {
     }
 
     fn into_blocks(self) -> Self::BlockIterator {
-        once(self.root).chain(self.parts.into_iter().map(RawBlockFile::into_blocks as RawIntoBlocksFn).flatten())
+        once(self.root).chain(
+            self.parts
+                .into_iter()
+                .map(RawBlockFile::into_blocks as RawIntoBlocksFn)
+                .flatten(),
+        )
     }
 }

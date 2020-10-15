@@ -1,8 +1,5 @@
 use async_std::os::unix::net::UnixListener;
-use std::error::Error;
-use std::fs::Permissions;
-use std::path::PathBuf;
-use std::os::unix::fs::PermissionsExt;
+use std::{error::Error, fs::Permissions, os::unix::fs::PermissionsExt, path::PathBuf};
 use tempfile::TempDir;
 
 const TEMP_DIR_PREFIX: &'static str = "rect-socket.";
@@ -24,7 +21,7 @@ impl SocketPool {
         std::fs::set_permissions(&dir, Permissions::from_mode(TEMP_DIR_MODE))?;
         Ok(SocketPool {
             mount_args: vec![],
-            dir
+            dir,
         })
     }
 
@@ -32,8 +29,12 @@ impl SocketPool {
         let arbitrary_id = self.mount_args.len().to_string();
         let socket_path = self.dir.path().join(arbitrary_id);
         let socket_path_str = socket_path.to_str().unwrap();
-        self.mount_args.push(format!("-v={}:{}", socket_path_str, path_in_container));
+        self.mount_args
+            .push(format!("-v={}:{}", socket_path_str, path_in_container));
         let listener = UnixListener::bind(&socket_path).await?;
-        Ok(Socket{ listener, socket_path })
+        Ok(Socket {
+            listener,
+            socket_path,
+        })
     }
 }

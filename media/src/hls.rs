@@ -1,18 +1,17 @@
 use crate::MediaContainer;
-use rectangle_device_blocks::{BlockInfo, BlockUsage, PbLink};
-use rectangle_device_blocks::raw::RawBlockFile;
-use rectangle_device_blocks::dir::DirectoryBlock;
-use rectangle_device_blocks::package::Package;
-use m3u8_rs::playlist::{MediaPlaylist, MediaSegment, MediaPlaylistType};
+use m3u8_rs::playlist::{MediaPlaylist, MediaPlaylistType, MediaSegment};
+use rectangle_device_blocks::{
+    dir::DirectoryBlock, package::Package, raw::RawBlockFile, BlockInfo, BlockUsage, PbLink,
+};
 
-pub const HLS_FILENAME : &'static str = "index.m3u8";
-pub const SEGMENT_MIN_SEC : f32 = 2.0;
-pub const SEGMENT_MAX_SEC : f32 = 5.0;
+pub const HLS_FILENAME: &'static str = "index.m3u8";
+pub const SEGMENT_MIN_SEC: f32 = 2.0;
+pub const SEGMENT_MAX_SEC: f32 = 5.0;
 
 pub struct HLSContainer {
     pub playlist: RawBlockFile,
     pub directory: DirectoryBlock,
-    pub sequence: usize
+    pub sequence: usize,
 }
 
 impl HLSContainer {
@@ -29,7 +28,7 @@ impl HLSContainer {
                 links.push(PbLink {
                     cid: segment.cid.clone(),
                     name: filename.clone(),
-                    size: segment.bytes as u64
+                    size: segment.bytes as u64,
                 });
                 hls_segments.push(MediaSegment {
                     uri: filename.into(),
@@ -62,7 +61,7 @@ impl HLSContainer {
         HLSContainer {
             playlist: playlist,
             directory: DirectoryBlock::new(links),
-            sequence: hls_playlist.segments.len()
+            sequence: hls_playlist.segments.len(),
         }
     }
 
@@ -70,10 +69,13 @@ impl HLSContainer {
         let playlist_usage = BlockUsage::Playlist(self.sequence);
         let directory_usage = BlockUsage::VideoDirectory(self.sequence);
 
-        self.playlist.into_blocks().map(
-            move |block| playlist_usage.attach_to(block)
-        ).chain(self.directory.into_blocks().map(
-            move |block| directory_usage.attach_to(block)
-        ))
+        self.playlist
+            .into_blocks()
+            .map(move |block| playlist_usage.attach_to(block))
+            .chain(
+                self.directory
+                    .into_blocks()
+                    .map(move |block| directory_usage.attach_to(block)),
+            )
     }
 }

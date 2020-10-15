@@ -1,24 +1,26 @@
-use rectangle_device_blocks::{BlockUsage, BlockInfo, BLOCK_MAX_BYTES};
-use rectangle_device_blocks::raw::RawBlockFile;
-use rectangle_device_blocks::package::Package;
+use rectangle_device_blocks::{
+    package::Package, raw::RawBlockFile, BlockInfo, BlockUsage, BLOCK_MAX_BYTES,
+};
 use rectangle_device_sandbox::{ffmpeg, socket::SocketPool};
 
-use crate::{MediaBlockInfo, MediaContainer, MediaUpdate, MediaUpdateBus};
-use crate::hls::{SEGMENT_MIN_SEC, SEGMENT_MAX_SEC};
+use crate::{
+    hls::{SEGMENT_MAX_SEC, SEGMENT_MIN_SEC},
+    MediaBlockInfo, MediaContainer, MediaUpdate, MediaUpdateBus,
+};
 
-use async_std::io::ReadExt;
-use async_std::os::unix::net::UnixStream;
-use async_std::stream::StreamExt;
-use async_std::sync::Sender;
-use async_std::task;
-use mpeg2ts::time::ClockReference;
-use mpeg2ts::ts::{TsPacket, TsPacketReader, ReadTsPacket, TsPacketWriter, WriteTsPacket};
-use std::error::Error;
-use std::io::Cursor;
-use std::process::ExitStatus;
-use std::time::{Duration, Instant};
-use std::thread;
-use std::thread::JoinHandle;
+use async_std::{io::ReadExt, os::unix::net::UnixStream, stream::StreamExt, sync::Sender, task};
+use mpeg2ts::{
+    time::ClockReference,
+    ts::{ReadTsPacket, TsPacket, TsPacketReader, TsPacketWriter, WriteTsPacket},
+};
+use std::{
+    error::Error,
+    io::Cursor,
+    process::ExitStatus,
+    thread,
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 
 pub struct VideoIngest {
@@ -54,7 +56,7 @@ impl VideoIngest {
         }
     }
 
-    pub fn run(self, args: Vec<String>) -> Result<JoinHandle<MediaContainer>, Box<dyn Error>>  {
+    pub fn run(self, args: Vec<String>) -> Result<JoinHandle<MediaContainer>, Box<dyn Error>> {
         let thread = thread::Builder::new().name("ingest".to_string());
         Ok(thread.spawn(move || self.thread_main(args))?)
     }
@@ -81,7 +83,7 @@ impl VideoIngest {
             cid: file.block.cid.clone(),
             bytes: data.len(),
             duration,
-            sequence: self.mc.blocks.len()
+            sequence: self.mc.blocks.len(),
         };
 
         let sequence = info.sequence;
@@ -90,15 +92,19 @@ impl VideoIngest {
 
         for block in file.into_blocks() {
             log::trace!("sending {} {:?}", block.cid.to_string(), usage);
-            self.media_sender.send(MediaUpdate::Block(BlockInfo {
-                usage: usage.clone(),
-                block
-            })).await;
+            self.media_sender
+                .send(MediaUpdate::Block(BlockInfo {
+                    usage: usage.clone(),
+                    block,
+                }))
+                .await;
         }
     }
 
     async fn send_container(&self) {
-        self.media_sender.send(MediaUpdate::Container(self.mc.clone())).await;
+        self.media_sender
+            .send(MediaUpdate::Container(self.mc.clone()))
+            .await;
     }
 
     async fn send_container_periodically(&mut self) {
@@ -125,11 +131,15 @@ impl VideoIngest {
     }
 
     fn clock_latest_as_u64(&self) -> u64 {
-        self.clock_latest.or(self.clock_first).map_or(0, |c| c.as_u64())
+        self.clock_latest
+            .or(self.clock_first)
+            .map_or(0, |c| c.as_u64())
     }
 
     fn segment_clock_as_u64(&self) -> u64 {
-        self.segment_clock.or(self.clock_first).map_or(0, |c| c.as_u64())
+        self.segment_clock
+            .or(self.clock_first)
+            .map_or(0, |c| c.as_u64())
     }
 
     fn latest_segment_duration(&self) -> f32 {
@@ -182,13 +192,15 @@ impl VideoIngest {
                 self.inspect_packet(&packet);
 
                 // Split this segment into smaller blocks when we need to
-                if write_position + TsPacket::SIZE > BLOCK_MAX_BYTES ||
-                    self.latest_segment_duration() >= SEGMENT_MAX_SEC {
-
+                if write_position + TsPacket::SIZE > BLOCK_MAX_BYTES
+                    || self.latest_segment_duration() >= SEGMENT_MAX_SEC
+                {
                     // Generate a block which ends just before 'packet'
                     self.push_video_block(
                         &write_cursor.get_ref()[0..write_position],
-                        duration_before_packet).await;
+                        duration_before_packet,
+                    )
+                    .await;
 
                     write_cursor.set_position(0);
                     write_cursor.get_mut().clear();
@@ -202,9 +214,8 @@ impl VideoIngest {
                 TsPacketWriter::new(&mut write_cursor).write_ts_packet(&packet)?;
             }
 
-            self.push_video_block(
-                write_cursor.into_inner(),
-                self.latest_segment_duration()).await;
+            self.push_video_block(write_cursor.into_inner(), self.latest_segment_duration())
+                .await;
 
             self.send_container_periodically().await;
         }

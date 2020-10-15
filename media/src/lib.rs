@@ -2,15 +2,15 @@ pub mod hls;
 pub mod html;
 pub mod ingest;
 
-use async_std::sync::{channel, Sender, Receiver};
-use rectangle_device_blocks::{Cid, BlockInfo};
+use async_std::sync::{channel, Receiver, Sender};
+use rectangle_device_blocks::{BlockInfo, Cid};
 
 #[derive(Clone)]
 pub struct MediaBlockInfo {
     pub cid: Cid,
     pub bytes: usize,
     pub duration: f32,
-    pub sequence: usize
+    pub sequence: usize,
 }
 
 #[derive(Clone)]
@@ -26,7 +26,7 @@ impl MediaContainer {
 
 pub enum MediaUpdate {
     Block(BlockInfo),
-    Container(MediaContainer)
+    Container(MediaContainer),
 }
 
 #[derive(Clone)]

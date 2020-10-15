@@ -1,7 +1,9 @@
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
-use rectangle_device_blocks::{BlockUsage, BlockInfo, Cid};
 use libp2p::PeerId;
+use rectangle_device_blocks::{BlockInfo, BlockUsage, Cid};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet},
+};
 
 pub struct BlockStore {
     pub data: BTreeMap<Vec<u8>, BlockInfo>,
@@ -17,7 +19,11 @@ impl BlockStore {
     }
 
     pub fn enqueue_send(&mut self, cid: Cid, peer_id: PeerId, usage: BlockUsage) {
-        self.send_queue.insert(BlockSendRequest { usage, cid, peer_id });
+        self.send_queue.insert(BlockSendRequest {
+            usage,
+            cid,
+            peer_id,
+        });
     }
 
     pub fn next_send(&mut self) -> Option<BlockSendRequest> {
