@@ -10,7 +10,7 @@ repository = "https://github.com/scanlime/rectangle-device"
 [dependencies]
 log = "0.4.11"
 async-std = { version = "1.6.0", features = ["unstable"] }
-m3u8-rs = "1.0"
+m3u8-rs = { version = "2.0", default-features = false }
 mpeg2ts = "0.1.1"
 rand = "0.7.3"
 thiserror = "1.0"
